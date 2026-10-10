@@ -31,6 +31,7 @@ export function levelSpec(level) {
     beetles: level >= 3 ? 1 + Math.floor((level - 3) / 8) : 0,
     flies: level >= 6 ? 1 + Math.floor((level - 6) / 8) : 0,
     squatters: level >= 2 ? Math.min(5, 2 + Math.floor((level - 2) / 5)) : 0,
+    thief: level >= 5,
   };
 }
 
@@ -107,6 +108,8 @@ export class PlanetScene {
       this.bugs.push({ kind: 'fly', x, ax: x, y: 0, dir: 1, ph: r() * TAU, gone: 0, color: r.pick(['#7bd36b', '#c78bff', '#ffb347']), hitCool: 0 });
     }
     this.bugs.forEach((b) => this.placeBugY(b));
+    // A thief bug that grabs a carried treasure and tries to hide it again.
+    this.thief = spec.thief ? { state: 'off', cool: r.range(8, 12), x: 0, y: 0, dir: 1, item: null, speed: this.level >= 10 ? 165 : 135, spin: 0 } : null;
     // One spare part per planet, until it has been found.
     this.spare = null;
     if (!hasSpare(this.level)) {
@@ -132,7 +135,7 @@ export class PlanetScene {
     }));
     // Par time for 3 stars: walk to the farthest treasure and back, plus some time per task.
     const far = Math.max(...this.treasures.map((tr) => Math.abs(tr.x - this.rx)));
-    this.par = (far * 2.4) / SPEED + n * 2.5 + spec.hidden * 2.5 + (spec.beetles + spec.flies) * 3 + spec.squatters * 1.5 + 3;
+    this.par = (far * 2.4) / SPEED + n * 2.5 + spec.hidden * 2.5 + (spec.beetles + spec.flies) * 3 + spec.squatters * 1.5 + (spec.thief ? 4 : 0) + 3;
   }
 
   // Height above the ground where an item rests.
@@ -191,6 +194,12 @@ export class PlanetScene {
     if (this.state !== 'play' && this.state !== 'clear') return;
     this.idle = 0;
     const wx = p.x + this.camX, wy = p.y;
+    // Tap the thief to make it drop what it took
+    const th = this.thief;
+    if (th && (th.state === 'flee' || th.state === 'swoop') && dist(wx, wy, th.x, th.y) < 85) {
+      if (th.state === 'flee') this.thiefCaught(); else { sfx('swat'); this.thiefLeave(true); }
+      return;
+    }
     // Flick a bug off the rocket
     for (const q of this.squatters) {
       if (q.state !== 'sit' && q.state !== 'arrive') continue;
@@ -344,6 +353,7 @@ export class PlanetScene {
     this.updateHero(dt);
     this.updateTreasures(dt);
     this.updateSpare(dt);
+    this.updateThief(dt);
     this.updateBugs(dt);
     this.updateSquatters(dt);
     for (const c of this.crew) c.cheer = Math.max(0, c.cheer - dt);
@@ -438,6 +448,103 @@ export class PlanetScene {
 
   spareHudPos() {
     return { x: V.safeL + 40 + this.treasures.length * 62 + 44, y: V.safeT + 60 };
+  }
+
+  // ---------- thief ----------
+  updateThief(dt) {
+    const th = this.thief, h = this.hero, w = this.world;
+    if (!th) return;
+    if (th.state === 'off') {
+      th.cool -= dt;
+      if (th.cool <= 0 && this.state === 'play' && h.carry.length && Math.abs(h.x - this.rx) > 350 && h.dizzy <= 0) {
+        // Swoop in from the far side, so it flees away from the rocket.
+        const side = h.x >= this.rx ? 1 : -1;
+        th.state = 'swoop'; th.x = h.x + side * V.w * 0.6; th.y = w.groundAt(h.x) - 320; th.dir = -side;
+        sfx('buzz');
+      }
+      return;
+    }
+    if (th.state === 'swoop') {
+      const tx = h.x, ty = h.y - 150 - Math.max(0, h.carry.length - 1) * 40;
+      const d = dist(th.x, th.y, tx, ty);
+      if (!h.carry.length || this.state !== 'play') { this.thiefLeave(false); return; }
+      th.dir = tx > th.x ? 1 : -1;
+      const sp = 430 * dt;
+      if (d <= sp + 30) {
+        th.item = h.carry.pop();
+        th.item.state = 'stolen';
+        th.state = 'flee'; th.fleeT = 0;
+        th.dir = th.x >= h.x ? 1 : -1;
+        sfx('whoosh');
+      } else { th.x += ((tx - th.x) / d) * sp; th.y += ((ty - th.y) / d) * sp; }
+      return;
+    }
+    if (th.state === 'flee') {
+      th.fleeT += dt;
+      // Fly away from the astronaut, low enough to be caught.
+      const away = th.x >= h.x ? 1 : -1;
+      th.dir = away;
+      th.x = clamp(th.x + away * th.speed * dt, 100, w.width - 100);
+      const gy = w.groundAt(th.x) - 95 + Math.sin(this.t * 5) * 10;
+      th.y += (gy - th.y) * Math.min(1, dt * 4);
+      th.item.x = th.x; th.item.y = th.y + 38;
+      // Walking into it also makes it drop the treasure (after a short head start,
+      // since it grabbed the treasure from right above the astronaut).
+      if (th.fleeT > 0.8 && h.dizzy <= 0 && Math.abs(h.x - th.x) < 50) { this.thiefCaught(); return; }
+      if (th.fleeT > 7) this.thiefHides();
+      return;
+    }
+    if (th.state === 'leave') {
+      th.x += th.dir * 300 * dt; th.y -= 380 * dt; th.spin += dt * (th.swatted ? 12 : 0);
+      if (th.y < -150) { th.state = 'off'; th.swatted = false; th.spin = 0; }
+    }
+  }
+
+  thiefLeave(swatted) {
+    const th = this.thief;
+    th.state = 'leave'; th.swatted = swatted;
+    th.cool = this.level >= 10 ? 14 : 20;
+  }
+
+  thiefCaught() {
+    const th = this.thief, tr = th.item;
+    th.item = null;
+    tr.state = 'pop'; tr.x = th.x; tr.y = th.y + 30; tr.vx = R.range(-80, 80); tr.vy = -420; tr.age = 0;
+    sfx('swat'); sfx('coin');
+    for (let i = 0; i < 8; i++) this.fx.star(th.x, th.y, { sp: 220 });
+    this.thiefLeave(true);
+  }
+
+  thiefHides() {
+    const th = this.thief, tr = th.item;
+    th.item = null;
+    // Hides it in a new bush right where it is, in plain sight.
+    const x = clamp(th.x, 120, this.world.width - 120);
+    tr.state = 'hidden'; tr.x = x;
+    const bush = { type: 'bush', x, y: this.world.groundAt(x) + 4, treasure: tr, used: false, shake: 1, rot: 0, bump: 0 };
+    this.hiders.push(bush);
+    this.tw.add(bush, { shake: 0 }, 0.6);
+    this.fx.dust(x, this.world.groundAt(x), 12);
+    sfx('rustle');
+    this.thiefLeave(false);
+  }
+
+  drawThief(ctx, t) {
+    const th = this.thief;
+    if (!th || th.state === 'off') return;
+    if (th.item) drawTreasure(ctx, th.item.type, th.item.x, th.item.y, t, 0.75, th.item.hue);
+    ctx.save();
+    ctx.translate(th.x, th.y);
+    ctx.rotate(th.spin);
+    ctx.scale(1.25, 1.25);
+    drawFly(ctx, 0, 0, th.dir, t * 1.5, '#6b5a8e');
+    // Bandit mask
+    ctx.scale(th.dir, 1);
+    ctx.rotate(-0.25);
+    rr(ctx, -6, -14, 26, 10, 5); ctx.fillStyle = '#1a1430'; ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    circle(ctx, 12, -9, 2.5); ctx.fill(); circle(ctx, 3, -10, 2); ctx.fill();
+    ctx.restore();
   }
 
   updateBugs(dt) {
@@ -643,6 +750,7 @@ export class PlanetScene {
       if (b.kind === 'beetle') drawBeetle(ctx, b.x, b.y, b.dir, t, b.color);
       else drawFly(ctx, b.x, b.y, b.dir, t, b.color);
     }
+    this.drawThief(ctx, t);
     const h = this.hero;
     if (h.visible !== false && !(h.invuln > 0 && h.dizzy <= 0 && Math.floor(t * 12) % 2)) {
       drawAstronaut(ctx, h.x, h.y, { t, dir: h.dir, walking: h.walking, phase: h.phase, color: CREW_COLORS[0], carrying: h.carry.length > 0, dizzy: h.dizzy > 0, scale: h.s });
@@ -675,7 +783,8 @@ export class PlanetScene {
     }
     if (this.state !== 'play') return;
     let tx = null, ty = null;
-    if (this.allFound() && this.hero.carry.length) { tx = this.rx; ty = this.ry - 200; }
+    if (this.thief && this.thief.state === 'flee') { tx = this.thief.x; ty = this.thief.y; }
+    else if (this.allFound() && this.hero.carry.length) { tx = this.rx; ty = this.ry - 200; }
     else if (this.idle > 6) {
       let best = null, bd = 1e9;
       for (const tr of this.treasures) {

@@ -51,6 +51,14 @@ The game uses logical coordinates with a fixed height of 768. The width follows 
 - 3 to 7 treasures per planet.
 - More treasures are hidden under rocks, in bushes or inside ?-blocks as the planets go on.
 - Beetles appear from planet 3 and flies from planet 6. Bugs bump the astronaut, who drops a treasure. Tap a bug to shoo it away.
+- From planet 2, bugs sneak onto the rocket while it is off screen. They have to be tapped off before the crew can board.
+- From planet 5, a masked thief bug grabs a carried treasure and flies off slowly. Tap it or catch up with it and it drops the treasure. If it gets away, it hides the treasure in a new bush.
 - Planets 11–20 revisit the first ten themes at night.
 
 Stars are based on time against a target time worked out from the level layout.
+
+## Extras
+
+- Every planet hides one spare part with a gold, rainbow or galaxy finish. Picking it up is optional. Found parts are saved and show up on a gold shelf in later workshops.
+- The star map shows the rocket you flew to each planet, parked on that planet.
+- When a new version has been deployed, a green download button appears on the title and map screens. Tapping it loads the new version, and progress is kept.
