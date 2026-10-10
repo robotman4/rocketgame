@@ -5,13 +5,16 @@ let ctx = null, master, musicBus, sfxBus, noiseBuf, pulse25, pulse12;
 // Set when iOS may have left the audio context "running" but silent (after the app was in
 // the background or the audio was interrupted). The next tap then rebuilds the context.
 let stale = false;
+// iOS keeps a context created before the first touch silent, even after resume().
+// So nothing is created until the first tap; music asked for before that waits here.
+let touched = false, pendingSong = null;
 
 // iOS 17+: play like a media app, so audio is not tied to the silent switch and is
 // less likely to be cut off by other sounds.
 try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
 
 function init() {
-  if (ctx) return;
+  if (ctx || !touched) return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   ctx = new AC();
@@ -57,6 +60,11 @@ function kick() {
 
 // Called on every touch. iOS only allows audio to start from a touch.
 export function unlockAudio() {
+  if (!touched) {
+    touched = true;
+    init();
+    if (pendingSong) { const song = pendingSong; pendingSong = null; playMusic(song); }
+  }
   if (ctx && stale) { stale = false; rebuild(); }
   init();
   if (!ctx) return;
@@ -285,6 +293,7 @@ function parseLead(bars) {
 let current = null, timer = null;
 
 export function playMusic(name) {
+  if (!touched) { pendingSong = name; return; }
   init();
   if (!ctx) return;
   if (current && current.name === name) return;
@@ -330,6 +339,7 @@ export function playMusic(name) {
 }
 
 export function stopMusic() {
+  pendingSong = null;
   if (timer) clearInterval(timer);
   timer = null;
   if (current && ctx && ctx.state !== 'closed') {
