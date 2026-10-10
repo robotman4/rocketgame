@@ -2,12 +2,20 @@
 import { save, persist } from './storage.js';
 
 let ctx = null, master, musicBus, sfxBus, noiseBuf, pulse25, pulse12;
+// Set when iOS may have left the audio context "running" but silent (after the app was in
+// the background or the audio was interrupted). The next tap then rebuilds the context.
+let stale = false;
+
+// iOS 17+: play like a media app, so audio is not tied to the silent switch and is
+// less likely to be cut off by other sounds.
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
 
 function init() {
   if (ctx) return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   ctx = new AC();
+  ctx.onstatechange = () => { if (ctx && ctx.state === 'interrupted') stale = true; };
   master = ctx.createGain();
   master.gain.value = save.muted ? 0 : 1;
   master.connect(ctx.destination);
@@ -27,21 +35,54 @@ function pulseWave(duty) {
   return ctx.createPeriodicWave(real, imag);
 }
 
-// iOS only allows audio after a touch, so the first tap unlocks it.
-export function unlockAudio() {
+// Throw away the audio context and start over, keeping the current song playing.
+function rebuild() {
+  const song = current && current.name;
+  if (timer) clearInterval(timer);
+  timer = null; current = null;
+  try { ctx.close(); } catch (e) { /* ignore */ }
+  ctx = null;
   init();
-  if (ctx && ctx.state !== 'running') ctx.resume();
+  if (song) playMusic(song);
 }
+
+// A short silent buffer started inside a touch is what really wakes audio up on iOS.
+function kick() {
+  try {
+    const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const src = ctx.createBufferSource();
+    src.buffer = b; src.connect(ctx.destination); src.start(0);
+  } catch (e) { /* ignore */ }
+}
+
+// Called on every touch. iOS only allows audio to start from a touch.
+export function unlockAudio() {
+  if (ctx && stale) { stale = false; rebuild(); }
+  init();
+  if (!ctx) return;
+  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  kick();
+}
+
+// Wake audio on every kind of touch event; iOS does not count all of them as a user gesture.
+for (const ev of ['touchend', 'pointerup', 'click']) document.addEventListener(ev, unlockAudio, { passive: true });
 
 document.addEventListener('visibilitychange', () => {
   if (!ctx) return;
-  if (document.hidden) ctx.suspend(); else ctx.resume();
+  if (document.hidden) {
+    ctx.suspend().catch(() => {});
+    // iOS may hand back a context that says "running" but plays nothing. Rebuild on next tap.
+    stale = true;
+  } else {
+    ctx.resume().catch(() => {});
+  }
 });
 
 export function isMuted() { return save.muted; }
 export function toggleMute() {
   save.muted = !save.muted;
   persist();
+  if (!save.muted && ctx) { rebuild(); return; }
   if (master) master.gain.setTargetAtTime(save.muted ? 0 : 1, ctx.currentTime, 0.05);
 }
 
@@ -161,12 +202,16 @@ export function rumble(dur = 6) {
   s.connect(f); f.connect(g); g.connect(sfxBus);
   s.start(t);
   let stopped = false;
+  const own = ctx; // the context may be rebuilt before this stops
   const stop = (fade = 1) => {
     if (stopped) return; stopped = true;
-    const n = ctx.currentTime;
-    g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(g.gain.value, n);
-    g.gain.exponentialRampToValueAtTime(0.0001, n + fade);
-    s.stop(n + fade + 0.05);
+    if (own.state === 'closed') return;
+    try {
+      const n = own.currentTime;
+      g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(g.gain.value, n);
+      g.gain.exponentialRampToValueAtTime(0.0001, n + fade);
+      s.stop(n + fade + 0.05);
+    } catch (e) { /* ignore */ }
   };
   setTimeout(() => stop(1), dur * 1000);
   return stop;
@@ -249,13 +294,15 @@ export function playMusic(name) {
   const steps = song.chords.length * 16;
   const lead = song.lead ? parseLead(song.lead) : [];
   const bus = ctx.createGain();
-  bus.gain.value = 0.0001;
+  bus.gain.setValueAtTime(0.0001, ctx.currentTime);
   bus.connect(musicBus);
   bus.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.8);
   current = { name, bus, step: 0, next: ctx.currentTime + 0.1 };
   const cur = current;
   const schedule = () => {
     if (!ctx || ctx.state !== 'running') { cur.next = ctx ? ctx.currentTime + 0.1 : 0; return; }
+    // After a stall (busy frame, app paused) skip ahead instead of playing all missed notes at once.
+    if (cur.next < ctx.currentTime - 0.1) cur.next = ctx.currentTime + 0.05;
     while (cur.next < ctx.currentTime + 0.15) {
       const s = cur.step % steps, t = cur.next;
       const bar = Math.floor(s / 16), i = s % 16;
@@ -285,7 +332,7 @@ export function playMusic(name) {
 export function stopMusic() {
   if (timer) clearInterval(timer);
   timer = null;
-  if (current && ctx) {
+  if (current && ctx && ctx.state !== 'closed') {
     const b = current.bus;
     b.gain.cancelScheduledValues(ctx.currentTime);
     b.gain.setValueAtTime(Math.max(b.gain.value, 0.0001), ctx.currentTime);
