@@ -14,6 +14,14 @@ import { FinaleScene } from './finale.js';
 
 const SPEED = 300;
 const QBLOCK_H = 205;
+// Where bugs sit when they take over the rocket (rocket-local coordinates).
+const SQUAT_SPOTS = [
+  { x: 0, y: -350, rot: 0, kind: 'beetle' },
+  { x: -60, y: -190, rot: -Math.PI / 2, kind: 'beetle' },
+  { x: 60, y: -120, rot: Math.PI / 2, kind: 'beetle' },
+  { x: -120, y: -260, rot: 0, kind: 'fly' },
+  { x: 125, y: -300, rot: 0, kind: 'fly' },
+];
 
 // How a level is put together. Gets a bit bigger and busier every planet.
 export function levelSpec(level) {
@@ -22,6 +30,7 @@ export function levelSpec(level) {
     hidden: Math.min(2 + Math.floor((level - 1) / 4), Math.floor(level / 2.5)),
     beetles: level >= 3 ? 1 + Math.floor((level - 3) / 8) : 0,
     flies: level >= 6 ? 1 + Math.floor((level - 6) / 8) : 0,
+    squatters: level >= 2 ? Math.min(5, 2 + Math.floor((level - 2) / 5)) : 0,
   };
 }
 
@@ -98,9 +107,14 @@ export class PlanetScene {
       this.bugs.push({ kind: 'fly', x, ax: x, y: 0, dir: 1, ph: r() * TAU, gone: 0, color: r.pick(['#7bd36b', '#c78bff', '#ffb347']), hitCool: 0 });
     }
     this.bugs.forEach((b) => this.placeBugY(b));
+    // Bugs that sneak onto the rocket while the astronaut is away.
+    this.squatters = SQUAT_SPOTS.slice(0, spec.squatters).map((sp, i) => ({
+      ...sp, state: 'wait', ox: 0, oy: 0, k: 0, delay: i * 0.35, ph: r() * TAU,
+      color: r.pick(['#e8443a', '#5cc95a', '#3b8fe8', '#f5962a', '#c78bff']),
+    }));
     // Par time for 3 stars: walk to the farthest treasure and back, plus some time per task.
     const far = Math.max(...this.treasures.map((tr) => Math.abs(tr.x - this.rx)));
-    this.par = (far * 2.4) / SPEED + n * 2.5 + spec.hidden * 2.5 + (spec.beetles + spec.flies) * 3 + 3;
+    this.par = (far * 2.4) / SPEED + n * 2.5 + spec.hidden * 2.5 + (spec.beetles + spec.flies) * 3 + spec.squatters * 1.5 + 3;
   }
 
   placeBugY(b) {
@@ -133,9 +147,16 @@ export class PlanetScene {
     if (this.sound.hit(p)) { toggleMute(); sfx('tap'); return; }
     if (this.home.hit(p)) { sfx('tap'); this.game.go(new MapScene(this.game)); return; }
     if (this.state === 'results') { this.resultsTap(p); return; }
-    if (this.state !== 'play') return;
+    if (this.state !== 'play' && this.state !== 'clear') return;
     this.idle = 0;
     const wx = p.x + this.camX, wy = p.y;
+    // Flick a bug off the rocket
+    for (const q of this.squatters) {
+      if (q.state !== 'sit' && q.state !== 'arrive') continue;
+      const c = this.squatterPos(q);
+      if (dist(wx, wy, c.x, c.y) < 70) { this.flickSquatter(q); return; }
+    }
+    if (this.state === 'clear') return;
     // Swat a bug
     for (const b of this.bugs) {
       if (b.gone > 0) continue;
@@ -174,6 +195,69 @@ export class PlanetScene {
     b.fallX = b.x; b.fallY = b.kind === 'beetle' ? b.y - 24 : b.y; b.fallVy = -500; b.spin = 0;
     sfx('swat');
     for (let i = 0; i < 6; i++) this.fx.star(b.x, b.fallY, { sp: 220 });
+  }
+
+  // ---------- bugs on the rocket ----------
+  // World position of a squatter's body centre.
+  squatterPos(q) {
+    if (q.state === 'arrive' || q.state === 'flick') return { x: q.wx, y: q.wy };
+    const wob = Math.sin(this.t * 4 + q.ph) * (q.kind === 'fly' ? 10 : 2);
+    if (q.kind === 'fly') return { x: this.rx + q.x + wob, y: this.ry + q.y + Math.cos(this.t * 3 + q.ph) * 8 };
+    // Beetle origin is its feet; body centre is 24 "up" in its own rotated frame.
+    return { x: this.rx + q.x + Math.sin(q.rot) * 24, y: this.ry + q.y - Math.cos(q.rot) * 24 + wob };
+  }
+
+  squattersArrive() {
+    this.squatArrived = true;
+    for (const q of this.squatters) {
+      q.state = 'arrive';
+      const side = q.x < 0 ? -1 : 1;
+      q.wx = this.rx + side * R.range(500, 800); q.wy = this.ry - R.range(300, 500);
+      const target = { x: this.rx + q.x, y: this.ry + q.y + (q.kind === 'beetle' ? -24 : 0) };
+      this.tw.add(q, { wx: target.x, wy: target.y }, 1.4, {
+        delay: q.delay, arc: 60, ease: ease.inOutQuad,
+        onDone: () => { if (q.state === 'arrive') q.state = 'sit'; },
+      });
+    }
+  }
+
+  flickSquatter(q) {
+    const c = this.squatterPos(q);
+    this.tw.cancel(q);
+    q.state = 'flick'; q.wx = c.x; q.wy = c.y;
+    q.vx = (c.x < this.rx ? -1 : 1) * R.range(250, 400); q.vy = -R.range(400, 600); q.spin = 0;
+    sfx('swat');
+    for (let i = 0; i < 6; i++) this.fx.star(c.x, c.y, { sp: 220 });
+    if (this.state === 'clear' && !this.squattersLeft()) setTimeout(() => this.complete(), 500);
+  }
+
+  squattersLeft() { return this.squatters.some((q) => q.state === 'sit' || q.state === 'arrive'); }
+
+  updateSquatters(dt) {
+    if (!this.squatArrived && this.squatters.length && this.state === 'play') {
+      // Only when the rocket is off screen, so it happens "while you were gone".
+      const sx = this.rx - this.camX;
+      if (sx < -200 || sx > V.w + 200) this.squattersArrive();
+    }
+    for (const q of this.squatters) {
+      if (q.state !== 'flick') continue;
+      q.vy += 1400 * dt; q.wx += q.vx * dt; q.wy += q.vy * dt; q.spin += dt * 14;
+      if (q.wy > V.h + 200) q.state = 'gone';
+    }
+  }
+
+  drawSquatters(ctx, t) {
+    for (const q of this.squatters) {
+      if (q.state === 'wait' || q.state === 'gone') continue;
+      const c = this.squatterPos(q);
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      if (q.state === 'flick') ctx.rotate(q.spin);
+      else if (q.state === 'sit' && q.kind === 'beetle') ctx.rotate(q.rot + Math.sin(t * 6 + q.ph) * 0.08);
+      if (q.kind === 'beetle') drawBeetle(ctx, 0, 24, Math.sin(t * 0.7 + q.ph) > 0 ? 1 : -1, t, q.color);
+      else drawFly(ctx, 0, 0, Math.sin(t * 0.7 + q.ph) > 0 ? 1 : -1, t, q.color);
+      ctx.restore();
+    }
   }
 
   // ---------- hiders ----------
@@ -215,10 +299,11 @@ export class PlanetScene {
     this.tw.update(dt);
     this.fx.update(dt);
     if (this.tapMark) { this.tapMark.t -= dt; if (this.tapMark.t <= 0) this.tapMark = null; }
-    if (this.state === 'play') { this.timer += dt; this.idle += dt; }
+    if (this.state === 'play' || this.state === 'clear') { this.timer += dt; this.idle += dt; }
     this.updateHero(dt);
     this.updateTreasures(dt);
     this.updateBugs(dt);
+    this.updateSquatters(dt);
     for (const c of this.crew) c.cheer = Math.max(0, c.cheer - dt);
     // camera
     const target = clamp(this.hero.x - V.w * 0.45, 0, Math.max(0, this.world.width - V.w));
@@ -371,14 +456,21 @@ export class PlanetScene {
           this.fx.burst(this.rx, this.ry - 176, 10);
           this.crew.forEach((c) => (c.cheer = 1.2));
           this.hudPulse = 0.5;
-          if (this.delivered.length === this.treasures.length) this.complete();
+          if (this.delivered.length === this.treasures.length) {
+            if (this.squattersLeft()) {
+              // Bugs still on the rocket: shoo them off before anyone can get in.
+              this.state = 'clear'; this.idle = 0;
+              this.hero.target = null;
+              sfx('buzz');
+            } else this.complete();
+          }
         },
       });
     });
   }
 
   complete() {
-    if (this.state !== 'play') return;
+    if (this.state !== 'play' && this.state !== 'clear') return;
     this.state = 'boarding';
     this.time = this.timer;
     this.stars = this.time <= this.par * 1.2 ? 3 : this.time <= this.par * 2 ? 2 : 1;
@@ -459,6 +551,7 @@ export class PlanetScene {
       ctx.globalAlpha = 1;
     }
     drawRocket(ctx, this.rx, this.ry, this.cfg, { crew: this.state !== 'play', hatch: this.hatch.v > 0.01 ? this.hatch.v : 0 });
+    this.drawSquatters(ctx, t);
     if (this.state === 'play' && this.allFound()) {
       // Rocket glows when everything has been found.
       ctx.globalAlpha = 0.3 + Math.sin(t * 6) * 0.2;
@@ -510,6 +603,15 @@ export class PlanetScene {
 
   // Arrow towards the rocket when all treasures are found, or a hint arrow when idle.
   drawPointer(ctx) {
+    if (this.state === 'clear') {
+      // Show a hand tapping the next bug on the rocket.
+      const q = this.squatters.find((s) => s.state === 'sit' || s.state === 'arrive');
+      if (q && this.idle > 1.2) {
+        const c = this.squatterPos(q);
+        drawHand(ctx, c.x - this.camX + 10, c.y + 10, 1, Math.sin(this.t * 8) > 0 ? 1 : 0);
+      }
+      return;
+    }
     if (this.state !== 'play') return;
     let tx = null, ty = null;
     if (this.allFound() && this.hero.carry.length) { tx = this.rx; ty = this.ry - 200; }
