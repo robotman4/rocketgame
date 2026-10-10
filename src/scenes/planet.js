@@ -2,11 +2,11 @@
 import { V, R, rng, clamp, dist, ease, Tweens, TAU } from '../core.js';
 import { World } from '../world.js';
 import { drawRocket, drawPartAt, spareFor, SLOT_BOX, HATCH } from '../rocket.js';
-import { drawAstronaut, drawBeetle, drawFly, drawTreasure, drawHider, drawArrow, drawHand, TREASURES, circle, fs, INK, rr } from '../draw.js';
+import { drawAstronaut, drawBeetle, drawFly, drawTreasure, drawHider, drawArrow, drawHand, TREASURES, circle, ellipse, fs, INK, rr } from '../draw.js';
 import { Button, layoutTopRight, drawStarIcon } from '../ui.js';
 import { sfx, playMusic, toggleMute } from '../audio.js';
 import { Particles } from '../particles.js';
-import { recordLevel, LEVELS, hasSpare, addSpare } from '../storage.js';
+import { recordLevel, LEVELS, hasSpare, addSpare, isDanger, DANGER_FROM } from '../storage.js';
 import { CREW_COLORS } from './flight.js';
 import { BuildScene } from './build.js';
 import { MapScene } from './map.js';
@@ -25,6 +25,18 @@ const SQUAT_SPOTS = [
 
 // How a level is put together. Gets a bit bigger and busier every planet.
 export function levelSpec(level) {
+  if (isDanger(level)) {
+    const d = level - DANGER_FROM; // 0..9
+    return {
+      treasures: 4 + Math.floor(d / 3),
+      hidden: 2 + Math.floor(d / 3),
+      beetles: 2 + Math.floor(d / 4),
+      flies: 1 + Math.floor(d / 4),
+      squatters: Math.min(5, 3 + Math.floor(d / 4)),
+      thief: true,
+      hearts: 2,
+    };
+  }
   return {
     treasures: 3 + Math.floor((level - 1) / 4),
     hidden: Math.min(2 + Math.floor((level - 1) / 4), Math.floor(level / 2.5)),
@@ -56,6 +68,11 @@ export class PlanetScene {
       { x: this.rx - 190, color: CREW_COLORS[2], dir: 1, cheer: 0, visible: false },
     ];
     this.delivered = [];
+    this.danger = isDanger(level);
+    this.hearts = this.danger ? 2 : 0;
+    this.heartShake = 0;
+    this.hurtFlash = 0;
+    this.warn = this.danger ? 3 : 0;
     this.timer = 0;
     this.idle = 0;
     this.state = 'intro';
@@ -66,7 +83,10 @@ export class PlanetScene {
   }
 
   onResize() { layoutTopRight([this.sound, this.home]); }
-  enter() { playMusic('planet'); }
+  enter() {
+    playMusic(this.danger ? 'danger' : 'planet');
+    if (this.danger) sfx('alarm');
+  }
 
   generate() {
     const r = rng(this.world.seed + 77);
@@ -101,11 +121,11 @@ export class PlanetScene {
     const bugX = () => r.range(this.rx + 450, W - 150);
     for (let i = 0; i < spec.beetles; i++) {
       const x = bugX();
-      this.bugs.push({ kind: 'beetle', x, y: 0, dir: r() < 0.5 ? -1 : 1, speed: 60 + this.level * 3, min: x - r.range(150, 300), max: x + r.range(150, 300), gone: 0, color: r.pick(['#e8443a', '#5cc95a', '#3b8fe8', '#f5962a']), hitCool: 0 });
+      this.bugs.push({ kind: 'beetle', x, y: 0, dir: r() < 0.5 ? -1 : 1, speed: (60 + Math.min(this.level, 20) * 3) * (this.danger ? 1.25 : 1), min: x - r.range(150, 300), max: x + r.range(150, 300), gone: 0, color: this.danger ? r.pick(['#8b1a2b', '#5a1a6b', '#2f2f45']) : r.pick(['#e8443a', '#5cc95a', '#3b8fe8', '#f5962a']), hitCool: 0 });
     }
     for (let i = 0; i < spec.flies; i++) {
       const x = bugX();
-      this.bugs.push({ kind: 'fly', x, ax: x, y: 0, dir: 1, ph: r() * TAU, gone: 0, color: r.pick(['#7bd36b', '#c78bff', '#ffb347']), hitCool: 0 });
+      this.bugs.push({ kind: 'fly', x, ax: x, y: 0, dir: 1, ph: r() * TAU, gone: 0, color: this.danger ? r.pick(['#c0392b', '#7a1f5c']) : r.pick(['#7bd36b', '#c78bff', '#ffb347']), hitCool: 0 });
     }
     this.bugs.forEach((b) => this.placeBugY(b));
     // A thief bug that grabs a carried treasure and tries to hide it again.
@@ -131,7 +151,7 @@ export class PlanetScene {
     // Bugs that sneak onto the rocket while the astronaut is away.
     this.squatters = SQUAT_SPOTS.slice(0, spec.squatters).map((sp, i) => ({
       ...sp, state: 'wait', ox: 0, oy: 0, k: 0, delay: i * 0.35, ph: r() * TAU,
-      color: r.pick(['#e8443a', '#5cc95a', '#3b8fe8', '#f5962a', '#c78bff']),
+      color: this.danger ? r.pick(['#8b1a2b', '#5a1a6b', '#2f2f45']) : r.pick(['#e8443a', '#5cc95a', '#3b8fe8', '#f5962a', '#c78bff']),
     }));
     // Par time for 3 stars: walk to the farthest treasure and back, plus some time per task.
     const far = Math.max(...this.treasures.map((tr) => Math.abs(tr.x - this.rx)));
@@ -197,6 +217,7 @@ export class PlanetScene {
     if (this.home.hit(p)) { sfx('tap'); this.game.go(new MapScene(this.game)); return; }
     if (this.state === 'results') { this.resultsTap(p); return; }
     if (this.state !== 'play' && this.state !== 'clear') return;
+    if (this.warn > 1) return; // let the warning be seen first
     this.idle = 0;
     const wx = p.x + this.camX, wy = p.y;
     // Tap the thief to make it drop what it took
@@ -357,6 +378,10 @@ export class PlanetScene {
     this.fx.update(dt);
     if (this.tapMark) { this.tapMark.t -= dt; if (this.tapMark.t <= 0) this.tapMark = null; }
     if (this.state === 'play' || this.state === 'clear') { this.timer += dt; this.idle += dt; }
+    this.warn = Math.max(0, this.warn - dt);
+    this.heartShake = Math.max(0, this.heartShake - dt);
+    this.hurtFlash = Math.max(0, this.hurtFlash - dt);
+    if (this.state === 'fail') this.failT += dt;
     this.updateHero(dt);
     this.updateTreasures(dt);
     this.updateSpare(dt);
@@ -578,7 +603,7 @@ export class PlanetScene {
         b.x = clamp(b.x, this.rx + 250, w.width - 40);
       } else {
         // Flies drift slowly towards the astronaut when close.
-        if (Math.abs(h.x - b.ax) < 420 && this.state === 'play') b.ax += Math.sign(h.x - b.ax) * 55 * dt;
+        if (Math.abs(h.x - b.ax) < (this.danger ? 520 : 420) && this.state === 'play') b.ax += Math.sign(h.x - b.ax) * (this.danger ? 75 : 55) * dt;
         b.ax = clamp(b.ax, this.rx + 260, w.width - 80);
         const nx = b.ax + Math.sin(this.t * 0.9 + b.ph) * 110;
         b.dir = nx > b.x ? 1 : -1;
@@ -603,11 +628,29 @@ export class PlanetScene {
     else b.ax -= away * 160;
     sfx('hit'); sfx('buzz');
     for (let i = 0; i < 5; i++) this.fx.star(h.x, h.y - 100, { sp: 160, r: 8 });
+    if (this.danger) {
+      this.hearts--;
+      this.heartShake = 0.6; this.hurtFlash = 0.5;
+      sfx('hurt');
+      if (this.hearts <= 0) { this.fail(); return; }
+    }
     // Drop the top treasure; it bounces away and has to be picked up again.
     if (h.carry.length) {
       const tr = h.carry.pop();
       tr.state = 'pop'; tr.vx = away * 260; tr.vy = -520; tr.age = 0;
     }
+  }
+
+  // Danger planets: second hit. The astronaut falls over and the planet starts over.
+  fail() {
+    this.state = 'fail';
+    const h = this.hero;
+    h.dizzy = 99; h.vx = 0; h.target = null; h.carry.forEach((tr) => { tr.state = 'pop'; tr.vx = R.range(-200, 200); tr.vy = -500; tr.age = 0; });
+    h.carry = [];
+    sfx('lose');
+    this.failT = 0;
+    // Only if the player is still here (they may have tapped home meanwhile).
+    setTimeout(() => { if (this.game.scene === this) this.game.go(new PlanetScene(this.game, this.level, this.cfg)); }, 2200);
   }
 
   deliver() {
@@ -754,8 +797,10 @@ export class PlanetScene {
         ctx.restore();
         continue;
       }
+      if (this.danger) this.drawDangerAura(ctx, b, t);
       if (b.kind === 'beetle') drawBeetle(ctx, b.x, b.y, b.dir, t, b.color);
       else drawFly(ctx, b.x, b.y, b.dir, t, b.color);
+      if (this.danger) this.drawSpikes(ctx, b, t);
     }
     this.drawThief(ctx, t);
     const h = this.hero;
@@ -768,9 +813,93 @@ export class PlanetScene {
 
     this.drawPointer(ctx);
     this.drawHud(ctx);
+    if (this.danger) {
+      this.drawHearts(ctx);
+      // Red edges: pulse on the last heart, flash when hit.
+      const edge = this.hurtFlash > 0 ? this.hurtFlash * 1.2 : (this.hearts === 1 && this.state === 'play' ? 0.25 + Math.sin(this.t * 5) * 0.12 : 0);
+      if (edge > 0) {
+        const g = ctx.createRadialGradient(V.w / 2, V.h / 2, V.h * 0.35, V.w / 2, V.h / 2, V.w * 0.7);
+        g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, `rgba(255,0,0,${Math.min(0.7, edge)})`);
+        ctx.fillStyle = g; ctx.fillRect(0, 0, V.w, V.h);
+      }
+      if (this.warn > 0) this.drawWarning(ctx);
+      if (this.state === 'fail') {
+        ctx.fillStyle = `rgba(60,0,10,${Math.min(0.6, this.failT * 0.5)})`; ctx.fillRect(0, 0, V.w, V.h);
+      }
+    }
     if (this.state === 'results') this.drawResults(ctx);
     this.home.draw(ctx, t);
     this.sound.draw(ctx, t);
+  }
+
+  // Red pulsing glow behind dangerous bugs.
+  drawDangerAura(ctx, b, t) {
+    const cy = b.kind === 'beetle' ? b.y - 24 : b.y;
+    const r = 60 + Math.sin(t * 6 + b.x) * 8;
+    const g = ctx.createRadialGradient(b.x, cy, 10, b.x, cy, r);
+    g.addColorStop(0, 'rgba(255,40,40,0.45)'); g.addColorStop(1, 'rgba(255,40,40,0)');
+    ctx.fillStyle = g; circle(ctx, b.x, cy, r); ctx.fill();
+  }
+
+  // Spikes on the shell (beetle) or a stinger (fly).
+  drawSpikes(ctx, b, t) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.scale(b.dir, 1);
+    ctx.fillStyle = '#ffe14d'; ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    if (b.kind === 'beetle') {
+      for (let i = -2; i <= 2; i++) {
+        const a = -Math.PI / 2 + i * 0.45, x = Math.cos(a) * 30, y = -24 + Math.sin(a) * 21;
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(a + 1.4) * 7, y + Math.sin(a + 1.4) * 7);
+        ctx.lineTo(x + Math.cos(a) * 16, y + Math.sin(a) * 16);
+        ctx.lineTo(x + Math.cos(a - 1.4) * 7, y + Math.sin(a - 1.4) * 7);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+      // angry red eye
+      circle(ctx, 34, -26, 3); ctx.fillStyle = '#ff2020'; ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.moveTo(-14, 6); ctx.lineTo(-34, 12 + Math.sin(t * 10) * 2); ctx.lineTo(-14, 14); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  drawHearts(ctx) {
+    const cx = V.w / 2, y = V.safeT + 50;
+    for (let i = 0; i < 2; i++) {
+      const full = i < this.hearts;
+      const shake = !full && i === this.hearts && this.heartShake > 0 ? Math.sin(this.heartShake * 60) * 6 : 0;
+      const pulse = full && this.hearts === 1 ? 1 + Math.sin(this.t * 8) * 0.12 : 1;
+      ctx.save(); ctx.translate(cx + (i - 0.5) * 70 + shake, y); ctx.scale(pulse, pulse);
+      ctx.beginPath();
+      ctx.moveTo(0, 18);
+      ctx.bezierCurveTo(-34, -6, -18, -32, 0, -14);
+      ctx.bezierCurveTo(18, -32, 34, -6, 0, 18);
+      ctx.closePath();
+      fs(ctx, full ? '#ff3d5e' : '#6a6070', 4);
+      if (full) { ellipse(ctx, -10, -12, 5, 4, -0.5); ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill(); }
+      else { ctx.beginPath(); ctx.moveTo(-2, -12); ctx.lineTo(4, 0); ctx.lineTo(-3, 8); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke(); }
+      ctx.restore();
+    }
+  }
+
+  // Big warning sign shown when landing on a danger planet.
+  drawWarning(ctx) {
+    const cx = V.w / 2, cy = V.h * 0.42;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, this.warn * 2);
+    ctx.fillStyle = 'rgba(80,0,10,0.35)'; ctx.fillRect(0, 0, V.w, V.h);
+    const s = (0.9 + Math.abs(Math.sin(this.t * 6)) * 0.12) * ease.outBack(Math.min(1, (3 - this.warn) * 3));
+    ctx.translate(cx, cy); ctx.scale(s, s);
+    ctx.beginPath(); ctx.moveTo(0, -110); ctx.lineTo(120, 95); ctx.lineTo(-120, 95); ctx.closePath();
+    ctx.lineJoin = 'round'; ctx.lineWidth = 26; ctx.strokeStyle = INK; ctx.stroke();
+    ctx.lineWidth = 16; ctx.strokeStyle = '#ffcc1a'; ctx.stroke();
+    ctx.fillStyle = '#e8443a'; ctx.fill();
+    ctx.font = '900 130px "Arial Rounded MT Bold", Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 10; ctx.strokeStyle = INK; ctx.strokeText('!', 0, 20);
+    ctx.fillStyle = '#ffffff'; ctx.fillText('!', 0, 20);
+    ctx.restore();
   }
 
   allFound() {

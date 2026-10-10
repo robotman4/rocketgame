@@ -54,6 +54,7 @@ The game uses logical coordinates with a fixed height of 768. The width follows 
 - From planet 2, bugs sneak onto the rocket while it is off screen. They have to be tapped off before the crew can board.
 - From planet 5, a masked thief bug grabs a carried treasure and flies off slowly. Tap it or catch up with it and it drops the treasure. If it gets away, it hides the treasure in a new bush.
 - Planets 11–20 revisit the first ten themes at night.
+- Planets 21–30 are the danger zone. They have a red sky, spiky red-glowing planets on the map and their own tenser music, and a warning sign and alarm play on landing. The astronaut has two hearts there, and every bug hit costs one. On the second hit the astronaut falls over and the planet restarts with all treasure back in place. The bugs are dark, spiky, glowing and a bit faster. The finale plays after planet 30.
 
 Stars are based on time against a target time worked out from the level layout.
 

@@ -5,7 +5,7 @@ import { INK, circle, ellipse, fs, rr, drawArrow } from '../draw.js';
 import { Button, layoutTopRight, updateButton, layoutTopLeft, drawStarIcon } from '../ui.js';
 import { drawRocket, randomPart, DRAW_ORDER } from '../rocket.js';
 import { playMusic, toggleMute, sfx } from '../audio.js';
-import { save, LEVELS } from '../storage.js';
+import { save, LEVELS, DANGER_FROM } from '../storage.js';
 import { Particles } from '../particles.js';
 import { pwa } from '../pwa.js';
 import { BuildScene } from './build.js';
@@ -105,6 +105,22 @@ export class MapScene {
     }
     drawStars(ctx, this.scroll * 0.2, 0, t, 1);
 
+    // Danger zone: red sky behind planets 21-30, with hazard stripes at the border.
+    const zx = (this.pos(DANGER_FROM - 1).x + this.pos(DANGER_FROM).x) / 2 - this.scroll;
+    if (zx < V.w) {
+      const dg = ctx.createLinearGradient(zx, 0, zx + 400, 0);
+      dg.addColorStop(0, 'rgba(160,10,30,0)'); dg.addColorStop(1, `rgba(160,10,30,${0.35 + Math.sin(t * 2) * 0.05})`);
+      ctx.fillStyle = dg; ctx.fillRect(zx, 0, V.w - zx + 10, V.h);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(zx - 14, 0, 28, V.h); ctx.clip();
+      ctx.fillStyle = '#ffcc1a'; ctx.fillRect(zx - 14, 0, 28, V.h);
+      ctx.fillStyle = '#1a1430';
+      for (let y = -40 + (t * 30) % 40; y < V.h + 40; y += 40) {
+        ctx.beginPath(); ctx.moveTo(zx - 14, y); ctx.lineTo(zx + 14, y - 20); ctx.lineTo(zx + 14, y); ctx.lineTo(zx - 14, y + 20); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
+
     // dotted path
     ctx.save();
     ctx.setLineDash([4, 18]); ctx.lineCap = 'round'; ctx.lineWidth = 8;
@@ -159,6 +175,21 @@ export class MapScene {
 export function drawPlanet(ctx, i, x, y, r, t, locked) {
   const th = themeFor(i);
   const [base, spot] = th.planet;
+  if (th.danger) {
+    // Red glow and a slowly turning ring of spikes: this planet is dangerous.
+    const g0 = ctx.createRadialGradient(x, y, r * 0.8, x, y, r * 1.9);
+    g0.addColorStop(0, 'rgba(255,40,40,0.55)'); g0.addColorStop(1, 'rgba(255,40,40,0)');
+    ctx.fillStyle = g0; circle(ctx, x, y, r * 1.9); ctx.fill();
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * TAU + t * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(a - 0.16) * r * 0.95, y + Math.sin(a - 0.16) * r * 0.95);
+      ctx.lineTo(x + Math.cos(a) * r * 1.32, y + Math.sin(a) * r * 1.32);
+      ctx.lineTo(x + Math.cos(a + 0.16) * r * 0.95, y + Math.sin(a + 0.16) * r * 0.95);
+      ctx.closePath();
+      fs(ctx, '#ffcc1a', 3);
+    }
+  }
   const ring = th.feature === 'rings' || i % 4 === 2;
   if (ring) {
     ctx.beginPath(); ctx.ellipse(x, y, r * 1.6, r * 0.38, -0.25, Math.PI, TAU);
@@ -194,10 +225,17 @@ export function drawPlanet(ctx, i, x, y, r, t, locked) {
     rr(ctx, x - 18, y - 8, 36, 28, 6); fs(ctx, '#ffcc1a', 4);
     circle(ctx, x, y + 4, 4); ctx.fillStyle = INK; ctx.fill();
   } else {
-    // happy face on every unlocked planet
+    // happy face on every unlocked planet, angry on danger planets
     ctx.fillStyle = INK;
     ellipse(ctx, x - r * 0.25, y - r * 0.1, r * 0.07, r * 0.12); ctx.fill();
     ellipse(ctx, x + r * 0.25, y - r * 0.1, r * 0.07, r * 0.12); ctx.fill();
-    ctx.beginPath(); ctx.arc(x, y + r * 0.08, r * 0.25, 0.3, Math.PI - 0.3); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
+    ctx.lineWidth = 4; ctx.strokeStyle = INK;
+    if (th.danger) {
+      ctx.beginPath(); ctx.moveTo(x - r * 0.42, y - r * 0.36); ctx.lineTo(x - r * 0.12, y - r * 0.24);
+      ctx.moveTo(x + r * 0.42, y - r * 0.36); ctx.lineTo(x + r * 0.12, y - r * 0.24); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y + r * 0.42, r * 0.22, Math.PI + 0.4, -0.4); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(x, y + r * 0.08, r * 0.25, 0.3, Math.PI - 0.3); ctx.stroke();
+    }
   }
 }

@@ -185,6 +185,19 @@ const sfxDefs = {
   },
   whoosh() { const t = ctx.currentTime; noise(t, 0.5, 0.4, sfxBus, 'bandpass', 400, 3000); },
   thud() { const t = ctx.currentTime; osc('sine', 120, t, 0.5, 0.7, sfxBus, 35); noise(t, 0.6, 0.5, sfxBus, 'lowpass', 600, 100); },
+  hurt() {
+    const t = ctx.currentTime;
+    osc('square', 520, t, 0.25, 0.3, sfxBus, 160);
+    noise(t, 0.15, 0.4, sfxBus, 'lowpass', 1200);
+  },
+  alarm() {
+    const t = ctx.currentTime;
+    for (let i = 0; i < 3; i++) { osc('p25', 880, t + i * 0.36, 0.16, 0.25, sfxBus); osc('p25', 660, t + i * 0.36 + 0.18, 0.16, 0.25, sfxBus); }
+  },
+  lose() {
+    const t = ctx.currentTime;
+    [67, 66, 65, 64].forEach((m, i) => osc('triangle', mtof(m), t + i * 0.3, i === 3 ? 0.7 : 0.28, 0.35, sfxBus, i === 3 ? mtof(60) : null));
+  },
   fanfare() {
     const t = ctx.currentTime;
     const seq = [[72, 0], [72, 0.12], [72, 0.24], [76, 0.36], [79, 0.6], [76, 0.78], [79, 0.9], [84, 1.05]];
@@ -264,6 +277,17 @@ const SONGS = {
       'F5 . A5 . C6 . A5 . F5 . . . E5 . . .',
       'G5 . E5 . C5 . E5 . G5 . C6 . E6 . . .',
       'D6 . . . B5 . . . G5 . . . - - - -',
+    ],
+  },
+  // Tense minor tune for the danger planets (E major at the end gives the pull back to Am).
+  danger: {
+    bpm: 156,
+    chords: ['Am', 'G', 'F', 'E'],
+    lead: [
+      'A4 . A4 . C5 . A4 . E5 . D5 . C5 . B4 .',
+      'G4 . G4 . B4 . G4 . D5 . C5 . B4 . A4 .',
+      'F4 . F4 . A4 . F4 . C5 . B4 . A4 . G4 .',
+      'E4 . G#4 . B4 . E5 . D5 . B4 . G#4 . E4 .',
     ],
   },
   space: { bpm: 100, chords: ['Em', 'C', 'G', 'D'], lead: null, noDrums: true },

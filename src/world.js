@@ -22,6 +22,15 @@ export function themeFor(level) {
   const idx = ((level - 1) % 10) + 1;
   const base = THEMES[idx];
   if (level <= 10) return { ...base, night: false, idx };
+  if (level > 20) {
+    // Danger zone: same places, but under a red, stormy sky.
+    return {
+      ...base, idx, night: true, stars: true, danger: true,
+      sky: [mix(base.sky[0], '#2a0610', 0.72), mix(base.sky[1], '#8a1c24', 0.55)],
+      hills: [mix(base.hills[0], '#5a1020', 0.5), mix(base.hills[1], '#3a0a18', 0.5)],
+      planet: [mix(base.planet[0], '#c0392b', 0.55), mix(base.planet[1], '#5a0a14', 0.5)],
+    };
+  }
   return {
     ...base, idx, night: true, stars: true,
     sky: [mix(base.sky[0], '#0b0b3a', 0.62), mix(base.sky[1], '#3a2a6a', 0.45)],
@@ -41,7 +50,7 @@ export class World {
     this.seed = 1000 + level * 7919;
     const r = rng(this.seed);
     this.rocketX = Math.round(V.w / 2);
-    this.width = level === 0 ? V.w : Math.round(Math.max(V.w * 1.8, V.w * (1.6 + level * 0.12)));
+    this.width = level === 0 ? V.w : Math.round(Math.max(V.w * 1.8, V.w * (1.6 + Math.min(level, 22) * 0.12)));
     this.amp = level === 0 ? 8 : 16 + Math.min(level, 12) * 2.5;
     this.p1 = r() * TAU; this.p2 = r() * TAU;
     this.decor = [];
