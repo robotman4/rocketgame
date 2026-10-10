@@ -83,7 +83,7 @@ export class PlanetScene {
       xs.push(r.range(a + 30, b - 30));
     }
     // Occasionally put one on the left side of the rocket.
-    if (this.level >= 4 && this.rx > 420) xs[r.int(0, n - 1)] = r.range(90, this.rx - 260);
+    if (this.level >= 4 && this.rx > 420) xs[r.int(0, n - 1)] = r.range(this.minX() + 10, this.rx - 260);
     const hiddenIdx = new Set();
     while (hiddenIdx.size < Math.min(spec.hidden, n)) hiddenIdx.add(r.int(0, n - 1));
     xs.forEach((x, i) => {
@@ -138,6 +138,11 @@ export class PlanetScene {
     this.par = (far * 2.4) / SPEED + n * 2.5 + spec.hidden * 2.5 + (spec.beetles + spec.flies) * 3 + spec.squatters * 1.5 + (spec.thief ? 4 : 0) + 3;
   }
 
+  // Items stay within this range so they are always visible and reachable,
+  // also next to the iPhone notch and rounded corners.
+  minX() { return 100 + V.safeL; }
+  maxX() { return this.world.width - 100 - V.safeR; }
+
   // Height above the ground where an item rests.
   restY(o) {
     const off = o.isSpare ? (SLOT_BOX[o.slot].h / 2) * 0.42 + 6 : 26;
@@ -151,7 +156,7 @@ export class PlanetScene {
     o.vy += 1500 * dt;
     o.x += o.vx * dt; o.y += o.vy * dt;
     // Bounce off the world edges so nothing lands where the astronaut can't walk.
-    const lo = 100, hi = w.width - 100;
+    const lo = this.minX(), hi = this.maxX();
     if (o.x < lo) { o.x = lo; o.vx = Math.abs(o.vx); }
     if (o.x > hi) { o.x = hi; o.vx = -Math.abs(o.vx); }
     const gy = this.restY(o);
@@ -227,14 +232,14 @@ export class PlanetScene {
   }
   onMove(p) {
     if (!this.holding || this.state !== 'play') return;
-    this.hero.target = clamp(p.x + this.camX, 60, this.world.width - 60);
+    this.hero.target = clamp(p.x + this.camX, this.minX() - 40, this.maxX() + 40);
     this.hero.pending = null;
   }
   onUp() { this.holding = false; }
 
   walkTo(x, hider) {
     const h = this.hero;
-    h.target = clamp(x, 60, this.world.width - 60);
+    h.target = clamp(x, this.minX() - 40, this.maxX() + 40);
     h.pending = hider;
     this.tapMark = { x: h.target, t: 0.5 };
     sfx('tap');
@@ -316,16 +321,18 @@ export class PlanetScene {
     h.used = true;
     const tr = h.treasure;
     const pop = (x, y) => {
-      tr.state = 'pop'; tr.x = x; tr.y = y; tr.vy = -620; tr.vx = (this.hero.x < h.x ? 1 : -1) * 40; tr.age = 0;
+      // Jump towards the astronaut, never towards the level edge.
+      tr.state = 'pop'; tr.x = x; tr.y = y; tr.vy = -620; tr.vx = Math.sign(this.hero.x - x || 1) * 40; tr.age = 0;
       sfx('coin');
       this.fx.burst(x, y, 10);
     };
     if (h.type === 'rock') {
       sfx('rock');
-      const dir = this.hero.x < h.x ? 1 : -1;
-      this.tw.add(h, { x: h.x + dir * 120, rot: dir * TAU * 0.6 }, 0.7, { ease: ease.outQuad, onDone: () => { h.y = this.world.groundAt(h.x) + 4; } });
-      this.fx.dust(h.x, this.world.groundAt(h.x), 10);
-      setTimeout(() => pop(h.x, this.world.groundAt(h.x) - 30), 200);
+      // Roll towards the middle of the level so it never ends up off screen, and land upright.
+      const ox = h.x, dir = ox < this.world.width / 2 ? 1 : -1;
+      this.tw.add(h, { x: ox + dir * 140, rot: dir * TAU }, 0.7, { ease: ease.outQuad, onDone: () => { h.y = this.world.groundAt(h.x) + 4; h.rot = 0; } });
+      this.fx.dust(ox, this.world.groundAt(ox), 10);
+      setTimeout(() => pop(ox, this.world.groundAt(ox) - 30), 200);
     } else if (h.type === 'bush') {
       sfx('rustle');
       h.shake = 1;
@@ -369,7 +376,7 @@ export class PlanetScene {
     h.invuln = Math.max(0, h.invuln - dt);
     if (h.dizzy > 0) {
       h.dizzy -= dt;
-      h.x = clamp(h.x + h.vx * dt, 60, w.width - 60);
+      h.x = clamp(h.x + h.vx * dt, this.minX() - 40, this.maxX() + 40);
       h.vx *= Math.exp(-5 * dt);
       h.hop = Math.max(0, (h.hop || 0) - dt);
       h.y = w.groundAt(h.x) - Math.sin(Math.min(1, h.hop / 0.35) * Math.PI) * 40;
@@ -414,7 +421,7 @@ export class PlanetScene {
       if (tr.state === 'pop') {
         this.stepPop(tr, dt);
       } else if (tr.state === 'ground') {
-        tr.x = clamp(tr.x, 100, w.width - 100);
+        tr.x = clamp(tr.x, this.minX(), this.maxX());
         tr.y =w.groundAt(tr.x) - 26 + Math.sin(this.t * 3 + tr.bob) * 5;
         if (this.state === 'play' && h.dizzy <= 0 && Math.abs(h.x - tr.x) < 50 && h.state !== 'intro') {
           tr.state = 'carried';
@@ -484,7 +491,7 @@ export class PlanetScene {
       // Fly away from the astronaut, low enough to be caught.
       const away = th.x >= h.x ? 1 : -1;
       th.dir = away;
-      th.x = clamp(th.x + away * th.speed * dt, 100, w.width - 100);
+      th.x = clamp(th.x + away * th.speed * dt, this.minX(), this.maxX());
       const gy = w.groundAt(th.x) - 95 + Math.sin(this.t * 5) * 10;
       th.y += (gy - th.y) * Math.min(1, dt * 4);
       th.item.x = th.x; th.item.y = th.y + 38;
@@ -519,7 +526,7 @@ export class PlanetScene {
     const th = this.thief, tr = th.item;
     th.item = null;
     // Hides it in a new bush right where it is, in plain sight.
-    const x = clamp(th.x, 120, this.world.width - 120);
+    const x = clamp(th.x, this.minX() + 20, this.maxX() - 20);
     tr.state = 'hidden'; tr.x = x;
     const bush = { type: 'bush', x, y: this.world.groundAt(x) + 4, treasure: tr, used: false, shake: 1, rot: 0, bump: 0 };
     this.hiders.push(bush);
