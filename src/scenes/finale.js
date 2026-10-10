@@ -1,7 +1,8 @@
 // Shown after planet 20: fireworks, dancing crew, big trophy.
 import { V, R } from '../core.js';
 import { drawStars } from '../world.js';
-import { drawAstronaut, starPath, fs, rr, INK } from '../draw.js';
+import { drawAstronaut, drawAlien, starPath, fs, rr, INK } from '../draw.js';
+import { save } from '../storage.js';
 import { Button, layoutTopRight } from '../ui.js';
 import { sfx, playMusic, toggleMute } from '../audio.js';
 import { Particles } from '../particles.js';
@@ -58,6 +59,7 @@ export class FinaleScene {
       const x = cx + [-330, 220, 330][i], y = 640 - Math.abs(Math.sin(t * 5 + i)) * 40;
       drawAstronaut(ctx, x, y, { t: t + i, color: c, arms: 'up', dir: i ? -1 : 1 });
     });
+    if (save.buddy) drawAlien(ctx, V.w / 2 - 210, 640 - Math.abs(Math.sin(t * 6)) * 50, { t, happy: true, hat: save.hat, squash: Math.max(0, Math.cos(t * 12)) * 0.5 });
     this.home.draw(ctx, t);
     this.sound.draw(ctx, t);
   }

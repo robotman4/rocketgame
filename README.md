@@ -62,5 +62,9 @@ Stars are based on time against a target time worked out from the level layout.
 
 - Every planet hides one spare part with a gold, rainbow or galaxy finish. Picking it up is optional. Found parts are saved and show up on a gold shelf in later workshops.
 - The star map shows the rocket you flew to each planet, parked on that planet.
+- Nearly everything reacts to taps. The sun puts on sunglasses (or the moon wobbles), clouds rain, hills with eyes giggle, plants and props squash and stretch, and the crew waves and hops.
+- Hats: every planet finished with 3 stars unlocks a new hat, which the crew puts on straight away. Pick any unlocked hat in the workshop's hat bar.
+- Alien buddy: found waiting on a rock from planet 3. After that it follows the astronaut, cheers when treasure is found, gets dizzy from bugs, sneezes now and then and rides in the rocket window. Tap it to send it back to the rocket, where it waits, and the game remembers that. Tap it at the rocket to bring it along again.
+- Silly bits: one astronaut sometimes trips on the way into the rocket, the rocket sometimes hiccups a smoke ring at liftoff, and a sleepy beetle snores until you tap it.
 - An (i) button on the title and map screens opens an info panel for parents: what the game is, that no data is collected, a disclaimer, the version and a "Check for updates" button. The app also checks for updates by itself every 2 hours and when it comes back from the background.
 - When a new version has been deployed, a green download button appears on the title and map screens. Tapping it loads the new version, and progress is kept.

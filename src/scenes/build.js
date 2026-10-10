@@ -2,10 +2,10 @@
 import { V, R, dist, ease, Tweens, shade } from '../core.js';
 import { World } from '../world.js';
 import { drawRocket, drawPad, drawPartAt, slotCenter, SLOT_BOX, DRAW_ORDER, VARIANTS, COLORS } from '../rocket.js';
-import { INK, rr, fs, drawHand, drawArrow, circle } from '../draw.js';
+import { INK, rr, fs, drawHand, drawArrow, circle, drawHat, drawAstronaut, HATS } from '../draw.js';
 import { Button, layoutTopRight } from '../ui.js';
 import { playMusic, toggleMute, sfx } from '../audio.js';
-import { save } from '../storage.js';
+import { save, persist, hatsUnlocked } from '../storage.js';
 import { Particles } from '../particles.js';
 import { FlightScene } from './flight.js';
 import { MapScene } from './map.js';
@@ -30,6 +30,8 @@ export class BuildScene {
     this.idle = 0;
     this.ready = false;
     this.wiggle = 0;
+    this.hatsOpen = hatsUnlocked(HATS.length);
+    this.hatPop = 0;
     this.launch = new Button('launch', '#e8443a', 62);
     this.launch.enabled = false;
     this.home = new Button('home', '#f5962a', 36);
@@ -135,13 +137,27 @@ export class BuildScene {
     return null;
   }
 
+  // Row of hats, top left. Unlocked ones can be picked; locked ones show a "?".
+  hatSlots() {
+    const r = 22 * V.ui, gap = r * 2 + 6;
+    const x0 = V.safeL + 40 + r + 70 * V.ui, y = V.safeT + 22 + r;
+    return HATS.map((hat, i) => ({ hat, i, x: x0 + i * gap, y, r, open: i < this.hatsOpen }));
+  }
+
   onDown(p) {
     this.idle = 0;
+    for (const sl of this.hatSlots()) {
+      if (Math.hypot(p.x - sl.x, p.y - sl.y) < sl.r + 6) {
+        if (sl.open) { save.hat = sl.hat; persist(); sfx('pop'); this.hatPop = 0.4; this.fx.burst(sl.x, sl.y, 6); }
+        else sfx('bounce');
+        return;
+      }
+    }
     if (this.sound.hit(p)) { toggleMute(); sfx('tap'); return; }
     if (this.home.hit(p)) { sfx('tap'); this.game.go(new MapScene(this.game)); return; }
     if (this.launch.hit(p)) { this.doLaunch(); return; }
     const part = this.partAt(p);
-    if (!part) { this.fx.burst(p.x, p.y, 5); return; }
+    if (!part) { if (!this.world.tap(p, 0, 0, this.t)) this.fx.burst(p.x, p.y, 5); return; }
     this.tw.cancel(part);
     if (part.state === 'placed') {
       this.placed[part.slot] = null;
@@ -233,6 +249,7 @@ export class BuildScene {
     this.t += dt;
     this.idle += dt;
     this.wiggle = Math.max(0, this.wiggle - dt);
+    this.hatPop = Math.max(0, this.hatPop - dt);
     this.tw.update(dt);
     this.fx.update(dt);
   }
@@ -276,10 +293,36 @@ export class BuildScene {
       ctx.restore();
     }
     this.fx.draw(ctx);
+    this.drawHatBar(ctx, t);
     this.drawHint(ctx);
     this.launch.draw(ctx, t);
     this.home.draw(ctx, t);
     this.sound.draw(ctx, t);
+  }
+
+  drawHatBar(ctx, t) {
+    const slots = this.hatSlots();
+    const first = slots[0], last = slots[slots.length - 1];
+    rr(ctx, V.safeL + 20, first.y - first.r - 10, last.x + last.r + 14 - V.safeL - 20, first.r * 2 + 20, first.r + 10);
+    ctx.fillStyle = 'rgba(20,14,40,0.3)'; ctx.fill();
+    // Astronaut head wearing the chosen hat
+    const k = 1 + this.hatPop;
+    ctx.save(); ctx.translate(V.safeL + 40 + 34 * V.ui, first.y + 36 * V.ui); ctx.scale(0.62 * V.ui * k, 0.62 * V.ui * k);
+    drawAstronaut(ctx, 0, 60, { t, color: '#f5962a', scale: 1 });
+    ctx.restore();
+    for (const sl of slots) {
+      const sel = save.hat === sl.hat;
+      circle(ctx, sl.x, sl.y, sl.r); fs(ctx, sel ? '#ffe14d' : sl.open ? 'rgba(255,255,255,0.85)' : 'rgba(120,110,140,0.6)', 3);
+      if (!sl.open) {
+        ctx.font = `900 ${22 * V.ui}px Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffffff';
+        ctx.fillText('?', sl.x, sl.y + 1);
+      } else if (sl.hat === 'none') {
+        ctx.beginPath(); ctx.moveTo(sl.x - 10, sl.y - 10); ctx.lineTo(sl.x + 10, sl.y + 10); ctx.moveTo(sl.x + 10, sl.y - 10); ctx.lineTo(sl.x - 10, sl.y + 10);
+        ctx.lineWidth = 4; ctx.strokeStyle = '#9a96a6'; ctx.stroke();
+      } else {
+        drawHat(ctx, sl.hat, sl.x, sl.y + sl.r * 0.45, 0.5 * V.ui, t);
+      }
+    }
   }
 
   drawHint(ctx) {

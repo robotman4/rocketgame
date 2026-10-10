@@ -29,6 +29,9 @@ export class FlightScene {
     this.flame = 0;
     this.crew = CREW_COLORS.map((color, i) => ({ x: -70 - i * 110, y: 0, s: 1, color, state: 'run', visible: true }));
     this.tw.add(this.hatch, { v: 1 }, 0.4);
+    // Silly extras: sometimes one astronaut trips on the way in, and the rocket may hiccup.
+    if (R() < 0.5) this.crew[R.int(0, 2)].tripAt = this.rx - R.range(170, 300);
+    this.hiccupAt = R() < 0.6 ? R.range(0.6, 1.3) : -1;
   }
   enter() {}
 
@@ -49,9 +52,19 @@ export class FlightScene {
 
     if (this.phase === 'board') {
       for (const c of this.crew) {
+        if (c.state === 'trip') {
+          c.tripT += dt;
+          if (c.tripT > 0.8) { c.state = 'run'; sfx('jump'); }
+          continue;
+        }
         if (c.state === 'run') {
           c.x += 330 * dt;
           c.y = this.groundFrom(c.x);
+          if (c.tripAt && c.x >= c.tripAt) {
+            c.tripAt = 0; c.state = 'trip'; c.tripT = 0;
+            sfx('bump'); this.fx.dust(c.x + 30, c.y, 8);
+            continue;
+          }
           if (c.x >= this.rx - 50) {
             c.state = 'jump';
             sfx('jump');
@@ -83,7 +96,15 @@ export class FlightScene {
       this.flame = 150 + Math.sin(this.t * 30) * 10;
       this.shake = Math.max(this.shake, Math.max(0, 6 - this.pt * 2.5));
       const alt = this.ry - r.y;
-      this.spawnSmoke(alt, nozzleY, this.ry);
+      // Hic! A puff of smoke ring and a little jolt.
+      if (this.hiccupAt > 0 && this.pt >= this.hiccupAt) {
+        this.hiccupAt = -1; this.hic = 0.18;
+        sfx('hiccup');
+        this.fx.ring(this.rx, nozzleY + 30, { vy: 140, r: 22, grow: 90 });
+        r.vy *= 0.6;
+      }
+      if (this.hic > 0) { this.hic -= dt; this.flame = 10; this.shake = Math.max(this.shake, 4); }
+      else this.spawnSmoke(alt, nozzleY, this.ry);
       if (alt > 3400) {
         if (this.stopRumble) this.stopRumble(1.2);
         playMusic('space');
@@ -188,6 +209,15 @@ export class FlightScene {
 
     for (const c of this.crew) {
       if (!c.visible) continue;
+      if (c.state === 'trip') {
+        // Face-plant, then back up.
+        const k = Math.min(1, c.tripT / 0.15) * (c.tripT > 0.6 ? 1 - (c.tripT - 0.6) / 0.2 : 1);
+        const y = c.y - this.camY;
+        ctx.save(); ctx.translate(c.x, y); ctx.rotate(k * 1.45); ctx.translate(-c.x, -y);
+        drawAstronaut(ctx, c.x, y, { t, color: c.color, scale: c.s, dir: 1, dizzy: c.tripT > 0.15 });
+        ctx.restore();
+        continue;
+      }
       drawAstronaut(ctx, c.x, c.y - this.camY, { t, color: c.color, walking: c.state === 'run', phase: t * 16 + c.x * 0.02, scale: c.s, dir: 1 });
     }
     ctx.restore();

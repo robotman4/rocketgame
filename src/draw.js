@@ -1,5 +1,6 @@
 // Shared drawing helpers and small sprites (astronaut, bugs, treasures, hiders, flames).
 import { TAU, shade } from './core.js';
+import { save } from './storage.js';
 
 export const INK = '#2a1f3d';
 
@@ -94,9 +95,13 @@ export function drawAstronaut(ctx, x, y, o = {}) {
     ellipse(ctx, 11, -89, 3, 4.5); ctx.fill();
   }
   ctx.beginPath(); ctx.arc(-4, -96, 6, Math.PI * 1.1, Math.PI * 1.6); ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 3; ctx.stroke();
-  // antenna
-  ctx.beginPath(); ctx.moveTo(-6, -114); ctx.lineTo(-10, -128); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
-  circle(ctx, -10, -130, 5); fs(ctx, color, 3);
+  // Hat (chosen in the workshop) or the antenna.
+  const hat = o.hat ?? save.hat;
+  if (hat && hat !== 'none') drawHat(ctx, hat, 0, -112, 1, t);
+  else {
+    ctx.beginPath(); ctx.moveTo(-6, -114); ctx.lineTo(-10, -128); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+    circle(ctx, -10, -130, 5); fs(ctx, color, 3);
+  }
   ctx.restore();
   if (o.dizzy) {
     for (let i = 0; i < 3; i++) {
@@ -287,5 +292,115 @@ export function drawArrow(ctx, x, y, angle, s = 1, color = '#ffe14d') {
   ctx.moveTo(30, 0); ctx.lineTo(0, -26); ctx.lineTo(0, -12); ctx.lineTo(-28, -12); ctx.lineTo(-28, 12); ctx.lineTo(0, 12); ctx.lineTo(0, 26);
   ctx.closePath();
   fs(ctx, color, 5);
+  ctx.restore();
+}
+
+// ---------------- hats ----------------
+// Won with 3-star planets, in this order. 'none' is always available.
+export const HATS = ['none', 'party', 'crown', 'pirate', 'chef', 'viking', 'cowboy', 'propeller', 'wizard', 'flower', 'tophat'];
+
+// Origin at the top of the helmet.
+export function drawHat(ctx, hat, x, y, s = 1, t = 0) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s);
+  ctx.lineJoin = 'round';
+  switch (hat) {
+    case 'party':
+      ctx.beginPath(); ctx.moveTo(-18, 8); ctx.lineTo(0, -40); ctx.lineTo(18, 8); ctx.closePath(); fs(ctx, '#f06fb0');
+      ctx.save(); ctx.beginPath(); ctx.moveTo(-18, 8); ctx.lineTo(0, -40); ctx.lineTo(18, 8); ctx.closePath(); ctx.clip();
+      ctx.fillStyle = '#ffe14d'; for (let i = -3; i < 3; i++) ctx.fillRect(-30, i * 14, 60, 5); ctx.restore();
+      circle(ctx, 0, -42, 7); fs(ctx, '#5cc95a', 3);
+      break;
+    case 'crown':
+      ctx.beginPath(); ctx.moveTo(-22, 8); ctx.lineTo(-24, -18); ctx.lineTo(-11, -6); ctx.lineTo(0, -24); ctx.lineTo(11, -6); ctx.lineTo(24, -18); ctx.lineTo(22, 8); ctx.closePath();
+      fs(ctx, '#ffcc1a'); circle(ctx, 0, -2, 4.5); fs(ctx, '#ff3d5e', 2);
+      break;
+    case 'pirate':
+      ctx.beginPath(); ctx.moveTo(-34, 6); ctx.quadraticCurveTo(-30, -26, 0, -28); ctx.quadraticCurveTo(30, -26, 34, 6); ctx.quadraticCurveTo(0, -6, -34, 6); ctx.closePath();
+      fs(ctx, '#2a2438');
+      ctx.fillStyle = '#ffffff'; circle(ctx, 0, -14, 6); ctx.fill();
+      ctx.fillRect(-7, -9, 4, 3); ctx.fillRect(3, -9, 4, 3);
+      break;
+    case 'chef':
+      rr(ctx, -16, -10, 32, 18, 3); fs(ctx, '#ffffff');
+      circle(ctx, -12, -18, 11); fs(ctx, '#ffffff'); circle(ctx, 12, -18, 11); fs(ctx, '#ffffff'); circle(ctx, 0, -26, 13); fs(ctx, '#ffffff');
+      break;
+    case 'viking':
+      for (const sd of [-1, 1]) {
+        ctx.beginPath(); ctx.moveTo(sd * 18, -2); ctx.quadraticCurveTo(sd * 40, -10, sd * 34, -36); ctx.quadraticCurveTo(sd * 28, -16, sd * 12, -10); ctx.closePath(); fs(ctx, '#fff4e0');
+      }
+      ctx.beginPath(); ctx.arc(0, 8, 24, Math.PI, 0); ctx.closePath(); fs(ctx, '#a7b0c2');
+      ctx.fillStyle = '#ffcc1a'; ctx.fillRect(-24, 2, 48, 6);
+      break;
+    case 'cowboy':
+      ctx.beginPath(); ctx.ellipse(0, 4, 40, 9, 0, 0, TAU); fs(ctx, '#a0602d');
+      ctx.beginPath(); ctx.moveTo(-20, 2); ctx.quadraticCurveTo(-22, -30, -6, -26); ctx.lineTo(0, -20); ctx.lineTo(6, -26); ctx.quadraticCurveTo(22, -30, 20, 2); ctx.closePath(); fs(ctx, '#c47a3a');
+      ctx.fillStyle = '#5a3418'; ctx.fillRect(-19, -4, 38, 5);
+      break;
+    case 'propeller': {
+      ctx.beginPath(); ctx.arc(0, 6, 22, Math.PI, 0); ctx.closePath(); fs(ctx, '#3b8fe8');
+      ctx.fillStyle = '#ffe14d'; ctx.beginPath(); ctx.arc(0, 6, 22, Math.PI, Math.PI * 1.33); ctx.lineTo(0, 6); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(0, -24); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+      const w = Math.cos(t * 25) * 26;
+      ctx.beginPath(); ctx.ellipse(0, -26, Math.abs(w), 5, 0, 0, TAU); fs(ctx, '#e8443a', 3);
+      break;
+    }
+    case 'wizard':
+      ctx.beginPath(); ctx.moveTo(-26, 8); ctx.quadraticCurveTo(-4, -20, 8, -52); ctx.quadraticCurveTo(10, -20, 26, 8); ctx.closePath(); fs(ctx, '#6a3fd0');
+      ctx.beginPath(); ctx.ellipse(0, 6, 32, 7, 0, 0, TAU); fs(ctx, '#6a3fd0');
+      starPath(ctx, 2, -18, 7, 3); fs(ctx, '#ffe14d', 2);
+      break;
+    case 'flower':
+      for (let i = 0; i < 6; i++) { const a = (i * TAU) / 6 + Math.sin(t * 2) * 0.1; circle(ctx, Math.cos(a) * 12, -14 + Math.sin(a) * 12, 9); fs(ctx, '#ff7ab8', 3); }
+      circle(ctx, 0, -14, 8); fs(ctx, '#ffe14d', 3);
+      break;
+    case 'tophat':
+      ctx.beginPath(); ctx.ellipse(0, 4, 30, 7, 0, 0, TAU); fs(ctx, '#2a2438');
+      rr(ctx, -18, -36, 36, 40, 4); fs(ctx, '#2a2438');
+      ctx.fillStyle = '#e8443a'; ctx.fillRect(-18, -8, 36, 7);
+      break;
+  }
+  ctx.restore();
+}
+
+// ---------------- alien buddy ----------------
+// Small green alien. Origin at its feet, about 60 tall.
+export function drawAlien(ctx, x, y, o = {}) {
+  const t = o.t || 0, dir = o.dir || 1, s = o.scale || 1;
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(dir * s, s);
+  if (o.rot) ctx.rotate(o.rot);
+  const squash = o.squash || 0;
+  ctx.scale(1 + squash * 0.25, 1 - squash * 0.25);
+  // feet
+  const step = o.walking ? Math.sin(t * 16) * 5 : 0;
+  ellipse(ctx, -9 + step, -3, 8, 5); fs(ctx, '#3fa34d', 3);
+  ellipse(ctx, 9 - step, -3, 8, 5); fs(ctx, '#3fa34d', 3);
+  // body
+  ellipse(ctx, 0, -26, 22, 24); fs(ctx, '#7bd36b');
+  ellipse(ctx, -7, -34, 6, 8); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
+  // antennae
+  for (const sd of [-1, 1]) {
+    const wob = Math.sin(t * 5 + sd) * 3;
+    ctx.beginPath(); ctx.moveTo(sd * 8, -46); ctx.quadraticCurveTo(sd * 14, -58, sd * 16 + wob, -64); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+    circle(ctx, sd * 16 + wob, -66, 5); fs(ctx, '#ffe14d', 3);
+  }
+  // one big eye
+  if (o.dizzy) {
+    circle(ctx, 2, -30, 11); fs(ctx, '#ffffff', 3);
+    ctx.beginPath(); for (let a = 0; a < 10; a += 0.4) ctx.lineTo(2 + Math.cos(a + t * 8) * a * 0.9, -30 + Math.sin(a + t * 8) * a * 0.9);
+    ctx.lineWidth = 2; ctx.strokeStyle = INK; ctx.stroke();
+  } else if (o.happy || o.sneeze) {
+    ctx.beginPath(); ctx.arc(2, -28, 8, Math.PI * 1.1, Math.PI * 1.9); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
+  } else {
+    circle(ctx, 2, -30, 11); fs(ctx, '#ffffff', 3);
+    circle(ctx, 5, -29, 5); ctx.fillStyle = INK; ctx.fill();
+    circle(ctx, 7, -31, 1.8); ctx.fillStyle = '#fff'; ctx.fill();
+  }
+  // mouth
+  ctx.beginPath();
+  if (o.sneeze) { ellipse(ctx, 4, -14, 5, 6); ctx.fillStyle = INK; ctx.fill(); }
+  else { ctx.arc(3, -16, 6, 0.2, Math.PI - 0.2); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke(); }
+  if (o.hat && o.hat !== 'none') drawHat(ctx, o.hat, 0, -48, 0.6, t);
   ctx.restore();
 }

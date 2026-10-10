@@ -1,6 +1,7 @@
 // Planet themes, terrain and background drawing.
 import { V, TAU, rng, mix, shade, clamp } from './core.js';
 import { INK, circle, ellipse, fs, rr, starPath } from './draw.js';
+import { sfx } from './audio.js';
 
 // Index 0 is Earth (start). 1..10 are planets; levels 11..20 revisit them at night.
 export const THEMES = [
@@ -53,6 +54,8 @@ export class World {
     this.width = level === 0 ? V.w : Math.round(Math.max(V.w * 1.8, V.w * (1.6 + Math.min(level, 22) * 0.12)));
     this.amp = level === 0 ? 8 : 16 + Math.min(level, 12) * 2.5;
     this.p1 = r() * TAU; this.p2 = r() * TAU;
+    // Tap reactions: times (in scene time) until which each reaction plays.
+    this.react = { cool: 0, feature: 0, clouds: {}, hills: {} };
     this.decor = [];
     let x = -500;
     while (x < this.width + 600) {
@@ -82,6 +85,9 @@ export class World {
     // Sky feature (sun, rings, moons), fades out in space.
     const fx = V.w * 0.8 - camX * 0.04, fy = 130 - camY * 0.04;
     ctx.globalAlpha = 1 - spaceMix;
+    // Tapped: boing!
+    const fb = this.react.feature > t ? Math.sin((this.react.feature - t) * 18) * 0.12 * (this.react.feature - t) : 0;
+    ctx.save(); ctx.translate(fx, fy); ctx.scale(1 + fb, 1 - fb); ctx.translate(-fx, -fy);
     if (th.night && (th.feature === 'sun' || th.feature === 'sun2')) {
       // Crescent moon at night.
       const mg = ctx.createRadialGradient(fx, fy, 20, fx, fy, 110);
@@ -97,8 +103,16 @@ export class World {
       circle(ctx, fx, fy, 52); fs(ctx, c);
       if (!th.night) {
         ctx.fillStyle = INK;
-        ellipse(ctx, fx - 16, fy - 6, 5, 8); ctx.fill(); ellipse(ctx, fx + 16, fy - 6, 5, 8); ctx.fill();
-        ctx.beginPath(); ctx.arc(fx, fy + 6, 18, 0.2, Math.PI - 0.2); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
+        if (this.react.cool > t) {
+          // Cool sunglasses
+          rr(ctx, fx - 32, fy - 18, 28, 20, 8); ctx.fill(); rr(ctx, fx + 4, fy - 18, 28, 20, 8); ctx.fill();
+          ctx.fillRect(fx - 6, fy - 14, 12, 4);
+          ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(fx - 26, fy - 14, 8, 4); ctx.fillRect(fx + 10, fy - 14, 8, 4);
+          ctx.beginPath(); ctx.arc(fx, fy + 8, 16, 0.3, Math.PI - 0.6); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
+        } else {
+          ellipse(ctx, fx - 16, fy - 6, 5, 8); ctx.fill(); ellipse(ctx, fx + 16, fy - 6, 5, 8); ctx.fill();
+          ctx.beginPath(); ctx.arc(fx, fy + 6, 18, 0.2, Math.PI - 0.2); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
+        }
       }
     } else if (th.feature === 'rings') {
       ctx.save(); ctx.translate(fx, fy); ctx.rotate(-0.3);
@@ -116,6 +130,7 @@ export class World {
       ellipse(ctx, fx - 18, fy - 10, 22, 16); ctx.fill(); ellipse(ctx, fx + 22, fy + 18, 18, 12); ctx.fill();
       ctx.restore();
     }
+    ctx.restore();
     ctx.globalAlpha = 1;
     if (spaceMix < 1) this.drawClouds(ctx, camX, camY, t, 1 - spaceMix);
   }
@@ -123,14 +138,75 @@ export class World {
   drawClouds(ctx, camX, camY, t, alpha) {
     if (this.theme.idx === 8 || this.theme.idx === 4) return;
     ctx.globalAlpha = alpha * (this.theme.night ? 0.35 : 0.95);
-    const span = V.w + 600;
     for (let i = 0; i < 5; i++) {
-      const x = ((hash(i + this.seed) * span + t * 12 - camX * 0.1) % span + span) % span - 300;
-      const y = 70 + hash(i * 3 + this.seed) * 170 - camY * 0.1;
-      const s = 0.7 + hash(i * 7) * 0.6;
-      cloud(ctx, x, y, s, '#ffffff');
+      const { x, y, s } = this.cloudPos(i, camX, camY, t);
+      const raining = this.react.clouds[i] > t;
+      if (raining) {
+        // A little shower under the tapped cloud.
+        ctx.save(); ctx.strokeStyle = '#4fa8ff'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        for (let k = 0; k < 9; k++) {
+          const dx = (k - 4) * 14 * s, dy = ((t * 500 + k * 53) % 160);
+          ctx.beginPath(); ctx.moveTo(x + dx, y + 25 * s + dy); ctx.lineTo(x + dx - 3, y + 25 * s + dy + 14); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      cloud(ctx, x, y, s, raining ? '#d6dce8' : '#ffffff');
     }
     ctx.globalAlpha = 1;
+  }
+
+  cloudPos(i, camX, camY, t) {
+    const span = V.w + 600;
+    const x = ((hash(i + this.seed) * span + t * 12 - camX * 0.1) % span + span) % span - 300;
+    return { x, y: 70 + hash(i * 3 + this.seed) * 170 - camY * 0.1, s: 0.7 + hash(i * 7) * 0.6 };
+  }
+
+  hillsInView(camX, camY) {
+    // Near hill layer (the ones with eyes), as screen positions.
+    const f = 0.5, sp = 270, ox = camX * f, oy = -camY * f, out = [];
+    const i0 = Math.floor((ox - 300) / sp), i1 = Math.ceil((ox + V.w + 300) / sp);
+    for (let i = i0; i <= i1; i++) {
+      out.push({ i, x: i * sp + hash(i * 3.3 + f) * 80 - ox, y: 650 + oy, r: 100 + hash(i * 1.7 + f) * 50, eyes: hash(i * 5.1) > 0.5 });
+    }
+    return out;
+  }
+
+  // A tap on the scenery. p is in screen space. Returns 'sky' when something in the sky
+  // reacted (the scene should not do anything else with the tap), 'ground' when a hill or
+  // prop reacted (the scene can still walk there), or null.
+  tap(p, camX, camY, t) {
+    const th = this.theme;
+    const fx = V.w * 0.8 - camX * 0.04, fy = 130 - camY * 0.04;
+    if (Math.hypot(p.x - fx, p.y - fy) < 80) {
+      this.react.feature = t + 0.8;
+      if ((th.feature === 'sun' || th.feature === 'sun2') && !th.night) {
+        this.react.cool = this.react.cool > t ? 0 : t + 6;
+        sfx(this.react.cool ? 'cool' : 'boing');
+      } else sfx('boing');
+      return 'sky';
+    }
+    if (th.idx !== 8 && th.idx !== 4) {
+      for (let i = 0; i < 5; i++) {
+        const c = this.cloudPos(i, camX, camY, t);
+        if (Math.abs(p.x - c.x) < 75 * c.s && Math.abs(p.y - c.y) < 45 * c.s) {
+          this.react.clouds[i] = t + 2; sfx('rain'); return 'sky';
+        }
+      }
+    }
+    const wx = p.x + camX, wy = p.y + camY;
+    for (const d of this.decor) {
+      const g = this.groundAt(d.x);
+      if (Math.abs(wx - d.x) < 60 * d.s && wy > g - 150 * d.s && wy < g + 10) {
+        d.wob = t; sfx(d.type === 'mushroom' || d.type === 'cloudPuff' ? 'boing' : d.type === 'flower' ? 'giggle' : 'pop');
+        return 'ground';
+      }
+    }
+    for (const h of this.hillsInView(camX, camY)) {
+      if (p.y < h.y && Math.hypot(p.x - h.x, p.y - h.y) < h.r && p.y < this.groundAt(wx) - camY - 20) {
+        this.react.hills[h.i] = t + 1.2; sfx('giggle'); return 'ground';
+      }
+    }
+    return null;
   }
 
   drawHills(ctx, camX, camY) {
@@ -142,14 +218,24 @@ export class World {
         const r = rmin + hash(i * 1.7 + f) * (rmax - rmin);
         const x = i * sp + hash(i * 3.3 + f) * 80 - ox;
         const y = base + oy;
+        const gig = eyes && this.react.hills[i] > this.now ? this.react.hills[i] - this.now : 0;
+        ctx.save();
+        if (gig) { const b = Math.sin(gig * 25) * 0.05; ctx.translate(x, y); ctx.scale(1 - b, 1 + b); ctx.translate(-x, -y); }
         ctx.beginPath(); ctx.arc(x, y, r, Math.PI, 0); ctx.closePath();
         fs(ctx, col, 4);
         ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.55, r * 0.18, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fill();
         if (eyes && hash(i * 5.1) > 0.5) {
           ctx.fillStyle = INK;
-          ellipse(ctx, x - 14, y - r * 0.55, 5, 11); ctx.fill();
-          ellipse(ctx, x + 14, y - r * 0.55, 5, 11); ctx.fill();
+          if (gig) {
+            ctx.lineWidth = 4; ctx.strokeStyle = INK;
+            for (const sx of [-14, 14]) { ctx.beginPath(); ctx.arc(x + sx, y - r * 0.5, 7, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+            ctx.beginPath(); ctx.arc(x, y - r * 0.38, 10, 0.1, Math.PI - 0.1); ctx.stroke();
+          } else {
+            ellipse(ctx, x - 14, y - r * 0.55, 5, 11); ctx.fill();
+            ellipse(ctx, x + 14, y - r * 0.55, 5, 11); ctx.fill();
+          }
         }
+        ctx.restore();
       }
     }
   }
@@ -190,11 +276,20 @@ export class World {
     for (const d of this.decor) {
       const sx = d.x - camX;
       if (sx < -250 || sx > V.w + 250) continue;
-      drawDecor(ctx, d.type, sx, this.groundAt(d.x) - camY + 4, d.s, d.seed, t, this.theme);
+      const age = d.wob !== undefined ? t - d.wob : 9;
+      if (age < 0.8) {
+        // Squash and stretch after a tap.
+        const b = Math.sin(age * 22) * 0.18 * (1 - age / 0.8);
+        const gy = this.groundAt(d.x) - camY + 4;
+        ctx.save(); ctx.translate(sx, gy); ctx.scale(1 + b, 1 - b); ctx.translate(-sx, -gy);
+        drawDecor(ctx, d.type, sx, gy, d.s, d.seed, t + age * 4, this.theme);
+        ctx.restore();
+      } else drawDecor(ctx, d.type, sx, this.groundAt(d.x) - camY + 4, d.s, d.seed, t, this.theme);
     }
   }
 
   drawBackground(ctx, camX, camY, t, spaceMix = 0) {
+    this.now = t;
     this.drawSky(ctx, camX, camY, t, spaceMix);
     this.drawHills(ctx, camX, camY);
     this.drawDecor(ctx, camX, camY, t);

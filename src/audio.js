@@ -185,6 +185,21 @@ const sfxDefs = {
   },
   whoosh() { const t = ctx.currentTime; noise(t, 0.5, 0.4, sfxBus, 'bandpass', 400, 3000); },
   thud() { const t = ctx.currentTime; osc('sine', 120, t, 0.5, 0.7, sfxBus, 35); noise(t, 0.6, 0.5, sfxBus, 'lowpass', 600, 100); },
+  giggle() {
+    const t = ctx.currentTime;
+    [0, 1, 2, 3, 4].forEach((i) => osc('sine', 900 + (i % 2) * 250 + i * 40, t + i * 0.07, 0.06, 0.18, sfxBus, 1300 + i * 40));
+  },
+  boing() { const t = ctx.currentTime; osc('sine', 180, t, 0.35, 0.45, sfxBus, 520); osc('sine', 520, t + 0.15, 0.25, 0.2, sfxBus, 260); },
+  cool() { const t = ctx.currentTime; osc('p25', mtof(84), t, 0.1, 0.2, sfxBus); osc('p25', mtof(91), t + 0.1, 0.25, 0.2, sfxBus); },
+  rain() { const t = ctx.currentTime; noise(t, 1.2, 0.25, sfxBus, 'highpass', 4000, 2500); },
+  snore() { const t = ctx.currentTime; noise(t, 0.9, 0.3, sfxBus, 'bandpass', 180, 420); },
+  hiccup() { const t = ctx.currentTime; osc('square', 300, t, 0.12, 0.3, sfxBus, 900); },
+  sneeze() {
+    const t = ctx.currentTime;
+    osc('sine', 500, t, 0.35, 0.15, sfxBus, 1100);
+    noise(t + 0.35, 0.3, 0.6, sfxBus, 'bandpass', 3000, 900);
+  },
+  yay() { const t = ctx.currentTime; [72, 76, 79].forEach((m, i) => osc('triangle', mtof(m + 12), t + i * 0.06, 0.12, 0.25, sfxBus)); },
   hurt() {
     const t = ctx.currentTime;
     osc('square', 520, t, 0.25, 0.3, sfxBus, 160);

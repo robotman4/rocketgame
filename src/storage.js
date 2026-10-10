@@ -5,7 +5,7 @@ export const LEVELS = 30;
 export const DANGER_FROM = 21;
 export const isDanger = (level) => level >= DANGER_FROM;
 
-const defaults = () => ({ stars: Array(LEVELS + 1).fill(0), unlocked: 1, muted: false, bestTimes: Array(LEVELS + 1).fill(0), rockets: Array(LEVELS + 1).fill(null), spares: [] });
+const defaults = () => ({ stars: Array(LEVELS + 1).fill(0), unlocked: 1, muted: false, bestTimes: Array(LEVELS + 1).fill(0), rockets: Array(LEVELS + 1).fill(null), spares: [], hat: 'none', buddy: false });
 
 export const save = (() => {
   let data = defaults();
@@ -38,4 +38,10 @@ export function addSpare(spare) {
   if (hasSpare(spare.level)) return;
   save.spares.push(spare);
   persist();
+}
+
+// Hats: one more for every planet finished with 3 stars.
+export function hatsUnlocked(hatCount) {
+  const threeStar = save.stars.filter((s) => s >= 3).length;
+  return Math.min(hatCount, 1 + threeStar);
 }

@@ -31,6 +31,10 @@ export class Particles {
       this.list.push({ kind: 'confetti', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: R.range(6, 10), life: R.range(1.8, 3), age: 0, c: R.pick(CONFETTI), g: 500, drag: 1.5, spin: R.range(-10, 10), rot: R.range(0, TAU) });
     }
   }
+  // Hollow smoke ring that grows and fades (for the rocket's hiccup).
+  ring(x, y, o = {}) {
+    this.list.push({ kind: 'ring', x, y, vx: o.vx ?? 0, vy: o.vy ?? 60, r: o.r ?? 18, grow: o.grow ?? 70, life: o.life ?? 1.6, age: 0, drag: 0.8 });
+  }
   firework(x, y) {
     const c = R.pick(CONFETTI);
     for (let i = 0; i < 36; i++) this.spark(x, y, { a: (i / 36) * TAU, sp: R.range(220, 320), c, g: 120, life: R.range(0.8, 1.3), r: 6 });
@@ -61,6 +65,11 @@ export class Particles {
         ctx.globalAlpha = Math.max(0, 1 - k) * 0.9;
         circle(ctx, x, y, p.r); ctx.fillStyle = p.c; ctx.fill();
         ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(90,80,110,0.35)'; ctx.stroke();
+      } else if (p.kind === 'ring') {
+        ctx.globalAlpha = Math.max(0, 1 - k);
+        ctx.beginPath(); ctx.ellipse(x, y, p.r, p.r * 0.45, 0, 0, TAU);
+        ctx.lineWidth = 12 * (1 - k * 0.5); ctx.strokeStyle = '#e8e8f0'; ctx.stroke();
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(90,80,110,0.5)'; ctx.stroke();
       } else if (p.kind === 'spark') {
         ctx.globalAlpha = Math.max(0, 1 - k);
         circle(ctx, x, y, p.r * (1 - k * 0.5)); ctx.fillStyle = p.c; ctx.fill();

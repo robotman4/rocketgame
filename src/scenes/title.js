@@ -1,7 +1,8 @@
 import { V, R } from '../core.js';
 import { World } from '../world.js';
 import { drawRocket, randomPart, DRAW_ORDER } from '../rocket.js';
-import { drawAstronaut, INK } from '../draw.js';
+import { drawAstronaut, drawAlien, INK } from '../draw.js';
+import { save } from '../storage.js';
 import { Button, layoutTopRight, updateButton, layoutTopLeft, tapUpdate } from '../ui.js';
 import { playMusic, toggleMute, sfx } from '../audio.js';
 import { Particles } from '../particles.js';
@@ -24,6 +25,7 @@ export class TitleScene {
     this.info = new InfoPanel();
     this.updBtn = updateButton();
     this.fx = new Particles();
+    this.hop = [0, 0, 0];
     // Just updated: show a present to open.
     this.gift = pwa.justUpdated ? new Gift() : null;
     pwa.justUpdated = false;
@@ -48,17 +50,27 @@ export class TitleScene {
       this.game.go(new MapScene(this.game));
       return;
     }
+    // Astronauts, the alien and the scenery all react to taps.
+    const rx = V.w / 2 - 120, ry = this.world.groundAt(rx);
+    const who = [[rx + 120, 0], [rx - 130, 1], [rx + 200, 2]];
+    for (const [x, i] of who) {
+      if (i === 2 && !save.buddy) continue;
+      if (Math.abs(p.x - x) < 50 && p.y > ry - 140 && p.y < ry + 10) { this.hop[i] = 0.6; sfx(i === 2 ? 'giggle' : 'jump'); return; }
+    }
+    if (this.world.tap(p, 0, 0, this.t)) return;
     this.fx.burst(p.x, p.y, 8);
     sfx('tap');
   }
-  update(dt) { this.t += dt; this.fx.update(dt); this.info.update(dt); if (this.gift) this.gift.update(dt); }
+  update(dt) { this.t += dt; this.hop = this.hop.map((h) => Math.max(0, h - dt)); this.fx.update(dt); this.info.update(dt); if (this.gift) this.gift.update(dt); }
   draw(ctx) {
     const t = this.t, w = this.world;
     w.drawBackground(ctx, 0, 0, t);
     const rx = V.w / 2 - 120, ry = w.groundAt(rx);
     drawRocket(ctx, rx, ry - 4 + Math.sin(t * 2) * 3, this.cfg, { crew: true });
-    drawAstronaut(ctx, rx + 120, ry, { t, color: '#f5962a', arms: 'up', dir: -1 });
-    drawAstronaut(ctx, rx - 130, ry, { t: t + 1, color: '#5cc95a', walking: false, dir: 1 });
+    const jump = (i) => Math.sin(Math.min(1, this.hop[i] / 0.6) * Math.PI) * 50;
+    drawAstronaut(ctx, rx + 120, ry - jump(0), { t, color: '#f5962a', arms: 'up', dir: -1 });
+    drawAstronaut(ctx, rx - 130, ry - jump(1), { t: t + 1, color: '#5cc95a', walking: false, dir: 1, arms: this.hop[1] > 0 ? 'up' : null });
+    if (save.buddy) drawAlien(ctx, rx + 200, ry - jump(2), { t, dir: -1, happy: this.hop[2] > 0, hat: save.hat, squash: this.hop[2] > 0.4 ? 0.6 : 0 });
     // Logo
     ctx.save();
     ctx.translate(V.w / 2, 150 + Math.sin(t * 1.5) * 6);

@@ -1,6 +1,7 @@
 // Rocket parts. Coordinates are local to the rocket: (0,0) is the bottom centre, up is negative y.
 import { INK, rr, circle, fs, tubeShade, starPath } from './draw.js';
 import { shade, TAU } from './core.js';
+import { save } from './storage.js';
 
 export const DRAW_ORDER = ['fins', 'engine', 'body', 'window', 'nose'];
 export const SLOT_BOX = {
@@ -142,8 +143,15 @@ function drawWindow(ctx, v, c, crew) {
     fs(ctx, g, 3);
     if (crew) {
       ctx.save(); circle(ctx, x, y, r); ctx.clip();
-      circle(ctx, x, y + r * 0.5, r * 0.75); fs(ctx, '#ffffff', 2);
-      ctx.fillStyle = '#2b3a67'; rr(ctx, x - r * 0.45, y + r * 0.2, r * 0.9, r * 0.5, 5); ctx.fill();
+      const hx = save.buddy ? x - r * 0.25 : x;
+      circle(ctx, hx, y + r * 0.5, r * 0.75); fs(ctx, '#ffffff', 2);
+      ctx.fillStyle = '#2b3a67'; rr(ctx, hx - r * 0.45, y + r * 0.2, r * 0.9, r * 0.5, 5); ctx.fill();
+      if (save.buddy) {
+        // The alien buddy peeks out next to the astronaut.
+        circle(ctx, x + r * 0.5, y + r * 0.55, r * 0.42); fs(ctx, '#7bd36b', 2);
+        circle(ctx, x + r * 0.5, y + r * 0.45, r * 0.18); fs(ctx, '#ffffff', 1.5);
+        circle(ctx, x + r * 0.53, y + r * 0.46, r * 0.08); ctx.fillStyle = INK; ctx.fill();
+      }
       ctx.restore();
     }
     ctx.beginPath(); ctx.arc(x, y, r * 0.65, Math.PI * 1.1, Math.PI * 1.5);
@@ -286,7 +294,7 @@ const FIN_PAD = 14, FIN_RES = 3;
 
 // Render the part once in white, then multiply a finish over it and keep the result.
 function finishedImage(slot, part, crew) {
-  const key = `${slot}|${part.variant}|${part.finish}|${crew ? 1 : 0}`;
+  const key = `${slot}|${part.variant}|${part.finish}|${crew ? 1 : 0}|${save.buddy ? 1 : 0}`;
   let img = finishCache.get(key);
   if (img) return img;
   const b = SLOT_BOX[slot];

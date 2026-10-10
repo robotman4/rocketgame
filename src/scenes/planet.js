@@ -2,11 +2,11 @@
 import { V, R, rng, clamp, dist, ease, Tweens, TAU } from '../core.js';
 import { World } from '../world.js';
 import { drawRocket, drawPartAt, spareFor, SLOT_BOX, HATCH } from '../rocket.js';
-import { drawAstronaut, drawBeetle, drawFly, drawTreasure, drawHider, drawArrow, drawHand, TREASURES, circle, ellipse, fs, INK, rr } from '../draw.js';
+import { drawAstronaut, drawBeetle, drawFly, drawTreasure, drawHider, drawArrow, drawHand, TREASURES, circle, ellipse, fs, INK, rr, drawAlien, drawHat, HATS } from '../draw.js';
 import { Button, layoutTopRight, drawStarIcon } from '../ui.js';
 import { sfx, playMusic, toggleMute } from '../audio.js';
 import { Particles } from '../particles.js';
-import { recordLevel, LEVELS, hasSpare, addSpare, isDanger, DANGER_FROM } from '../storage.js';
+import { recordLevel, LEVELS, hasSpare, addSpare, isDanger, DANGER_FROM, save, persist, hatsUnlocked } from '../storage.js';
 import { CREW_COLORS } from './flight.js';
 import { BuildScene } from './build.js';
 import { MapScene } from './map.js';
@@ -130,6 +130,18 @@ export class PlanetScene {
     this.bugs.forEach((b) => this.placeBugY(b));
     // A thief bug that grabs a carried treasure and tries to hide it again.
     this.thief = spec.thief ? { state: 'off', cool: r.range(8, 12), x: 0, y: 0, dir: 1, item: null, speed: this.level >= 10 ? 165 : 135, spin: 0 } : null;
+    // Alien buddy: found once (from planet 3), then comes along on every planet
+    // unless it was sent back to the rocket.
+    this.buddy = null; this.lostAlien = null;
+    if (save.buddy) {
+      const home = save.buddyOn === false;
+      this.buddy = { x: this.rx + (home ? -70 : 60), y: 0, dir: 1, state: home ? 'home' : 'follow', visible: false, happy: 0, dizzy: 0, sneeze: 0, nextSneeze: r.range(12, 22), squash: 0, walking: false };
+    } else if (this.level >= 3) {
+      const ax = clamp(this.rx + 650, this.minX() + 50, W - 200);
+      this.lostAlien = { x: ax, found: false };
+    }
+    // A sleepy beetle that snores. Harmless; tap it and it jumps awake, then dozes off again.
+    this.sleeper = this.level >= 2 ? { x: r.range(this.rx + 350, W - 200), awake: 0, nextSnore: 0 } : null;
     // One spare part per planet, until it has been found.
     this.spare = null;
     if (!hasSpare(this.level)) {
@@ -203,6 +215,7 @@ export class PlanetScene {
             h.state = 'idle';
             this.fx.dust(h.x, h.y, 6);
             this.crew.forEach((c, i) => setTimeout(() => { c.visible = true; c.cheer = 1.5; this.fx.dust(c.x, this.world.groundAt(c.x), 4); sfx('pop'); }, 150 + i * 200));
+            if (this.buddy) setTimeout(() => { this.buddy.visible = true; this.buddy.happy = 1; this.fx.dust(this.buddy.x, this.world.groundAt(this.buddy.x), 5); sfx('yay'); }, 650);
             this.tw.add(this.hatch, { v: 0 }, 0.3, { delay: 0.6 });
             this.state = 'play';
           },
@@ -239,6 +252,22 @@ export class PlanetScene {
       const by = b.kind === 'beetle' ? b.y - 24 : b.y;
       if (dist(wx, wy, b.x, by) < 75) { this.swat(b); return; }
     }
+    // Alien buddy: tap to send it back to the rocket, or to bring it along again.
+    const bd = this.buddy;
+    if (bd && bd.visible && dist(wx, wy, bd.x, bd.y - 30) < 60) { this.toggleBuddy(); return; }
+    // Crew by the rocket: wave and hop.
+    for (const c of this.crew) {
+      if (c.visible && Math.abs(wx - c.x) < 45 && wy > this.world.groundAt(c.x) - 130 && wy < this.world.groundAt(c.x) + 10) {
+        c.cheer = 1.5; c.hop = 0.5; sfx('jump'); return;
+      }
+    }
+    // Sleepy beetle
+    const sl = this.sleeper;
+    if (sl && sl.awake <= 0 && dist(wx, wy, sl.x, this.world.groundAt(sl.x) - 24) < 70) {
+      sl.awake = 2.5; sfx('bump'); this.fx.burst(sl.x, this.world.groundAt(sl.x) - 50, 6); return;
+    }
+    // Sky things react and use up the tap; hills and props react and the astronaut still walks.
+    if (this.world.tap(p, this.camX, 0, this.t) === 'sky') return;
     // Tap a rock / bush / ?-block: walk there and open it.
     for (const h of this.hiders) {
       if (h.used) continue;
@@ -336,6 +365,110 @@ export class PlanetScene {
     }
   }
 
+  // ---------- alien buddy ----------
+  toggleBuddy() {
+    const bd = this.buddy;
+    if (bd.state === 'follow') {
+      bd.state = 'run'; save.buddyOn = false; sfx('jump');
+    } else {
+      bd.state = 'follow'; save.buddyOn = true; bd.happy = 1; bd.squash = 1; sfx('yay');
+      this.fx.burst(bd.x, bd.y - 40, 8);
+    }
+    persist();
+  }
+
+  updateBuddy(dt) {
+    const bd = this.buddy, h = this.hero, w = this.world;
+    // Finding the lost alien (first time only)
+    const la = this.lostAlien;
+    if (la && !la.found && this.state === 'play' && Math.abs(h.x - la.x) < 60) {
+      la.found = true;
+      save.buddy = true; save.buddyOn = true; persist();
+      this.buddy = { x: la.x, y: w.groundAt(la.x), dir: -1, state: 'follow', visible: true, happy: 2, dizzy: 0, sneeze: 0, nextSneeze: 15, squash: 1, walking: false };
+      sfx('yay'); sfx('ready');
+      this.fx.confetti(la.x, w.groundAt(la.x) - 60, 40);
+      this.fx.burst(la.x, w.groundAt(la.x) - 60, 12);
+    }
+    if (!bd) return;
+    bd.happy = Math.max(0, bd.happy - dt); bd.dizzy = Math.max(0, bd.dizzy - dt);
+    bd.squash = Math.max(0, bd.squash - dt * 3);
+    bd.walking = false;
+    if (bd.state === 'board') return;
+    let target = null, speed = 340;
+    if (bd.state === 'follow' && h.state !== 'boarding') target = h.x - h.dir * 75;
+    if (bd.state === 'run') { target = this.rx - 75; speed = 420; }
+    if (bd.state === 'home') target = this.rx - 75;
+    if (target !== null && bd.dizzy <= 0) {
+      const dx = target - bd.x;
+      if (Math.abs(dx) > 8) { bd.dir = Math.sign(dx); bd.x += bd.dir * Math.min(speed * dt, Math.abs(dx)); bd.walking = true; }
+      else if (bd.state === 'run') { bd.state = 'home'; bd.dir = 1; sfx('pop'); }
+    }
+    bd.y = w.groundAt(bd.x) - (bd.walking ? Math.abs(Math.sin(this.t * 14)) * 8 : 0) - (bd.happy > 0 ? Math.abs(Math.sin(bd.happy * 9)) * 22 : 0);
+    // Sneezes now and then
+    bd.nextSneeze -= dt;
+    if (bd.nextSneeze <= 0 && bd.visible) {
+      bd.nextSneeze = R.range(15, 28); bd.sneeze = 0.8; sfx('sneeze');
+      setTimeout(() => { if (this.buddy === bd) { this.fx.smoke(bd.x + bd.dir * 25, bd.y - 20, { vx: bd.dir * 160, vy: -20, r: 8, grow: 30, life: 0.7 }); bd.x -= bd.dir * 12; } }, 350);
+    }
+    bd.sneeze = Math.max(0, bd.sneeze - dt);
+  }
+
+  drawBuddy(ctx, t) {
+    const la = this.lostAlien, w = this.world;
+    if (la && !la.found) {
+      // Waiting on a rock, waving, until the astronaut walks up to it.
+      const gy = w.groundAt(la.x);
+      ctx.beginPath(); ctx.moveTo(la.x - 40, gy + 2); ctx.quadraticCurveTo(la.x - 40, gy - 34, la.x, gy - 36); ctx.quadraticCurveTo(la.x + 40, gy - 34, la.x + 40, gy + 2); ctx.closePath();
+      fs(ctx, w.theme.rock || '#a59fb3');
+      drawAlien(ctx, la.x, gy - 32 - Math.abs(Math.sin(t * 3)) * 6, { t, dir: -1, scale: 1 });
+      if ((t % 2) < 1) { ctx.font = '900 34px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe14d'; ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.strokeText('?', la.x + 28, gy - 110); ctx.fillText('?', la.x + 28, gy - 110); }
+    }
+    const bd = this.buddy;
+    if (!bd || !bd.visible) return;
+    drawAlien(ctx, bd.x, bd.y, { t, dir: bd.dir, walking: bd.walking, happy: bd.happy > 0, dizzy: bd.dizzy > 0, sneeze: bd.sneeze > 0.4, squash: bd.squash, hat: save.hat });
+    if (bd.state === 'home' && Math.abs(this.hero.x - bd.x) < 300 && (t % 3) < 0.6) {
+      // waves at the astronaut: little hand
+      circle(ctx, bd.x + 26, bd.y - 52 + Math.sin(t * 20) * 4, 7); fs(ctx, '#7bd36b', 3);
+    }
+  }
+
+  // ---------- sleepy beetle ----------
+  updateSleeper(dt) {
+    const sl = this.sleeper;
+    if (!sl) return;
+    sl.awake = Math.max(0, sl.awake - dt);
+    sl.nextSnore -= dt;
+    const sx = sl.x - this.camX;
+    if (sl.awake <= 0 && sl.nextSnore <= 0 && sx > 0 && sx < V.w && this.state === 'play') { sl.nextSnore = 3; sfx('snore'); }
+  }
+
+  drawSleeper(ctx, t) {
+    const sl = this.sleeper;
+    if (!sl) return;
+    const gy = this.world.groundAt(sl.x);
+    const jump = sl.awake > 2 ? Math.sin((2.5 - sl.awake) * 2 * Math.PI) * 40 : 0;
+    ctx.save();
+    if (sl.awake <= 0) {
+      // asleep: squashed a little, eyes closed via a lid over the eye
+      ctx.translate(sl.x, gy); ctx.scale(1.05, 0.92 + Math.sin(t * 2) * 0.03); ctx.translate(-sl.x, -gy);
+    }
+    drawBeetle(ctx, sl.x, gy - jump, -1, sl.awake > 0 ? t : 0, '#c78bff');
+    ctx.restore();
+    if (sl.awake <= 0) {
+      ctx.beginPath(); ctx.arc(sl.x - 32, gy - 27, 6, 0, Math.PI); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+      ctx.save(); ctx.font = '900 26px Arial, sans-serif'; ctx.fillStyle = '#ffffff'; ctx.strokeStyle = INK; ctx.lineWidth = 5; ctx.textAlign = 'center';
+      for (let k = 0; k < 3; k++) {
+        const ph = (t * 0.6 + k / 3) % 1;
+        ctx.globalAlpha = 1 - ph; const zx = sl.x - 40 - ph * 30, zy = gy - 60 - ph * 70;
+        ctx.font = `900 ${18 + ph * 16}px Arial, sans-serif`; ctx.strokeText('z', zx, zy); ctx.fillText('z', zx, zy);
+      }
+      ctx.restore();
+    } else if (sl.awake > 1.5) {
+      ctx.save(); ctx.font = '900 40px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe14d'; ctx.strokeStyle = INK; ctx.lineWidth = 6;
+      ctx.strokeText('!', sl.x, gy - 90 - jump); ctx.fillText('!', sl.x, gy - 90 - jump); ctx.restore();
+    }
+  }
+
   // ---------- hiders ----------
   openHider(h) {
     if (h.used) return;
@@ -386,6 +519,9 @@ export class PlanetScene {
     this.updateTreasures(dt);
     this.updateSpare(dt);
     this.updateThief(dt);
+    this.updateBuddy(dt);
+    this.updateSleeper(dt);
+    for (const c of this.crew) c.hop = Math.max(0, (c.hop || 0) - dt);
     this.updateBugs(dt);
     this.updateSquatters(dt);
     for (const c of this.crew) c.cheer = Math.max(0, c.cheer - dt);
@@ -452,6 +588,7 @@ export class PlanetScene {
           tr.state = 'carried';
           h.carry.push(tr);
           sfx('coin');
+          if (this.buddy && this.buddy.state === 'follow') this.buddy.happy = 0.8;
           this.fx.burst(tr.x, tr.y, 8);
           this.idle = 0;
         }
@@ -627,6 +764,7 @@ export class PlanetScene {
     if (b.kind === 'beetle') b.dir = -away;
     else b.ax -= away * 160;
     sfx('hit'); sfx('buzz');
+    if (this.buddy && this.buddy.state === 'follow') this.buddy.dizzy = 1;
     for (let i = 0; i < 5; i++) this.fx.star(h.x, h.y - 100, { sp: 160, r: 8 });
     if (this.danger) {
       this.hearts--;
@@ -685,7 +823,12 @@ export class PlanetScene {
     this.state = 'boarding';
     this.time = this.timer;
     this.stars = this.time <= this.par * 1.2 ? 3 : this.time <= this.par * 2 ? 2 : 1;
+    const hatsBefore = hatsUnlocked(HATS.length);
     recordLevel(this.level, this.stars, Math.round(this.time), this.cfg);
+    const hatsAfter = hatsUnlocked(HATS.length);
+    // A new hat! Put it on straight away.
+    this.newHat = hatsAfter > hatsBefore ? HATS[hatsAfter - 1] : null;
+    if (this.newHat) { save.hat = this.newHat; persist(); }
     sfx('fanfare');
     this.fx.confetti(this.rx, this.ry - 300, 70);
     const h = this.hero;
@@ -702,7 +845,15 @@ export class PlanetScene {
         }, i * 300);
       });
     }, 900);
-    setTimeout(() => { this.tw.add(this.hatch, { v: 0 }, 0.3); this.showResults(); }, 2400);
+    // The alien buddy hops in too.
+    const bd = this.buddy;
+    if (bd && bd.visible) {
+      setTimeout(() => {
+        bd.state = 'board'; bd.happy = 0;
+        this.tw.add(bd, { x: this.rx, y: this.ry + HATCH.y + 40 }, 0.5, { arc: 90, ease: ease.inOutQuad, onDone: () => { bd.visible = false; sfx('pop'); } });
+      }, 1950);
+    }
+    setTimeout(() => { this.tw.add(this.hatch, { v: 0 }, 0.3); this.showResults(); }, 2600);
   }
 
   // ---------- results ----------
@@ -771,7 +922,7 @@ export class PlanetScene {
     }
     for (const c of this.crew) {
       if (!c.visible) continue;
-      drawAstronaut(ctx, c.x, c.y ?? w.groundAt(c.x), { t: t + c.x, color: c.color, arms: c.cheer > 0 ? 'up' : null, dir: 1, scale: c.s || 1 });
+      drawAstronaut(ctx, c.x, (c.y ?? w.groundAt(c.x)) - Math.sin(Math.min(1, (c.hop || 0) / 0.5) * Math.PI) * 40, { t: t + c.x, color: c.color, arms: c.cheer > 0 ? 'up' : null, dir: 1, scale: c.s || 1 });
     }
     for (const h of this.hiders) {
       const hh = h.bump ? { ...h, y: h.y - Math.sin(h.bump * Math.PI) * 18 } : h;
@@ -802,6 +953,8 @@ export class PlanetScene {
       else drawFly(ctx, b.x, b.y, b.dir, t, b.color);
       if (this.danger) this.drawSpikes(ctx, b, t);
     }
+    this.drawSleeper(ctx, t);
+    this.drawBuddy(ctx, t);
     this.drawThief(ctx, t);
     const h = this.hero;
     if (h.visible !== false && !(h.invuln > 0 && h.dizzy <= 0 && Math.floor(t * 12) % 2)) {
@@ -986,15 +1139,26 @@ export class PlanetScene {
     const n = this.delivered.length;
     this.delivered.forEach((tr, i) => drawTreasure(ctx, tr.type, (i - (n - 1) / 2) * 62, -185, this.t, 0.75, tr.hue));
     ctx.restore();
-    if (this.spare && this.spare.state === 'got' && r.t > 2) {
+    const gotSpare = this.spare && this.spare.state === 'got';
+    // New hat and/or new part, side by side when both.
+    const hatX = gotSpare ? cx + 90 : cx, spareX = this.newHat ? cx - 90 : cx;
+    if (this.newHat && r.t > 2) {
+      const k = ease.outBack(Math.min(1, (r.t - 2) * 2));
+      ctx.save(); ctx.translate(hatX, 432); ctx.scale(k, k);
+      ctx.rotate(-this.t * 0.8);
+      for (let i = 0; i < 10; i++) { ctx.rotate(TAU / 10); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-10, -52); ctx.lineTo(10, -52); ctx.fillStyle = 'rgba(255,120,200,0.35)'; ctx.fill(); }
+      ctx.restore();
+      drawHat(ctx, this.newHat, hatX, 452, 1.5 * k, this.t);
+    }
+    if (gotSpare && r.t > 2) {
       // "New part!" with spinning rays
       const k = ease.outBack(Math.min(1, (r.t - 2) * 2));
-      ctx.save(); ctx.translate(cx, 432); ctx.scale(k, k);
+      ctx.save(); ctx.translate(spareX, 432); ctx.scale(k, k);
       ctx.rotate(this.t * 0.8);
       for (let i = 0; i < 10; i++) { ctx.rotate(TAU / 10); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-10, -52); ctx.lineTo(10, -52); ctx.fillStyle = 'rgba(255,210,60,0.35)'; ctx.fill(); }
       ctx.restore();
       const b = SLOT_BOX[this.spare.slot];
-      drawPartAt(ctx, this.spare.slot, this.spare.part, cx, 432, (72 / Math.max(b.w, b.h)) * k);
+      drawPartAt(ctx, this.spare.slot, this.spare.part, spareX, 432, (72 / Math.max(b.w, b.h)) * k);
     }
     for (let i = 0; i < 3; i++) {
       const shown = r.shown > i;
