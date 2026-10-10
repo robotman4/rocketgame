@@ -1,6 +1,6 @@
 # Rocket Hunt
 
-A PWA game for kids aged 4–8. Players build a rocket from parts lying around, launch it to a planet, find treasures and bring them back to the rocket. The game has 20 planets, and each one is scored with 1–3 stars based on how fast the treasures were found.
+A PWA game for kids aged 4–8. Players build a rocket from parts lying around, launch it to a planet, find treasures and bring them back to the rocket. The game has 30 planets, the last 10 of them a harder "danger zone", and each one is scored with 1–3 stars based on how fast the treasures were found.
 
 - Made for iPad in landscape. Works on iPhone too.
 - Uses almost no text: icons, arrows, glowing outlines and a pointing hand guide the player.
