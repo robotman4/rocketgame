@@ -1,7 +1,8 @@
 // Round icon buttons. No text, only symbols.
 import { INK, circle, fs, rr, starPath } from './draw.js';
 import { V, dist, shade } from './core.js';
-import { isMuted } from './audio.js';
+import { isMuted, sfx } from './audio.js';
+import { pwa } from './pwa.js';
 
 export class Button {
   constructor(icon, color, r = 44) {
@@ -13,9 +14,11 @@ export class Button {
   hit(p) { return this.visible && this.enabled && dist(p.x, p.y, this.x, this.y) < this.r + 14; }
   draw(ctx, t) {
     if (!this.visible) return;
-    const s = (this.pulse ? 1 + Math.sin(t * 6) * 0.07 : 1) * (1 - this.pressed * 0.12);
+    let s = (this.pulse ? 1 + Math.sin(t * 6) * 0.07 : 1) * (1 - this.pressed * 0.12);
+    if (this.spinning) s = 1.25 + Math.sin(t * 20) * 0.05;
     ctx.save();
     ctx.translate(this.x, this.y);
+    if (this.spinning) ctx.rotate(t * 14);
     ctx.scale(s, s);
     if (this.pulse) {
       ctx.globalAlpha = 0.35 + Math.sin(t * 6) * 0.2;
@@ -101,4 +104,14 @@ export function updateButton() {
 export function layoutTopLeft(b) {
   b.x = V.safeL + 20 + b.r;
   b.y = 20 + b.r + V.safeT;
+}
+
+// Tap on the update button: spin and sparkle for a moment, then reload into the new version.
+export function tapUpdate(btn, fx) {
+  if (btn.spinning) return;
+  btn.spinning = true; btn.pulse = false;
+  sfx('ready');
+  fx.burst(btn.x, btn.y, 16);
+  fx.confetti(btn.x, btn.y, 30);
+  setTimeout(() => pwa.apply(), 800);
 }

@@ -2,7 +2,7 @@
 import { V, clamp, TAU, shade } from '../core.js';
 import { themeFor, drawStars } from '../world.js';
 import { INK, circle, ellipse, fs, rr, drawArrow } from '../draw.js';
-import { Button, layoutTopRight, updateButton, layoutTopLeft, drawStarIcon } from '../ui.js';
+import { Button, layoutTopRight, updateButton, layoutTopLeft, tapUpdate, drawStarIcon } from '../ui.js';
 import { drawRocket, randomPart, DRAW_ORDER } from '../rocket.js';
 import { playMusic, toggleMute, sfx } from '../audio.js';
 import { save, LEVELS, DANGER_FROM } from '../storage.js';
@@ -41,7 +41,7 @@ export class MapScene {
 
   onDown(p) {
     this.updBtn.visible = pwa.ready;
-    if (this.updBtn.hit(p)) { sfx('pop'); pwa.apply(); return; }
+    if (this.updBtn.hit(p)) { tapUpdate(this.updBtn, this.fx); return; }
     if (this.sound.hit(p)) { toggleMute(); sfx('tap'); return; }
     if (this.home.hit(p)) { sfx('tap'); this.game.go(new TitleScene(this.game)); return; }
     this.drag = { x0: p.x, last: p.x, s0: this.scroll, moved: 0, t: performance.now() };
@@ -166,7 +166,7 @@ export class MapScene {
 
     this.fx.draw(ctx);
     this.home.draw(ctx, t);
-    this.updBtn.visible = pwa.ready;
+    this.updBtn.visible = pwa.ready || this.updBtn.spinning;
     this.updBtn.draw(ctx, t);
     this.sound.draw(ctx, t);
   }
