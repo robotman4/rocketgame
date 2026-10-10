@@ -2,7 +2,7 @@
 const KEY = 'rocketgame.v1';
 export const LEVELS = 20;
 
-const defaults = () => ({ stars: Array(LEVELS + 1).fill(0), unlocked: 1, muted: false, bestTimes: Array(LEVELS + 1).fill(0), rockets: Array(LEVELS + 1).fill(null) });
+const defaults = () => ({ stars: Array(LEVELS + 1).fill(0), unlocked: 1, muted: false, bestTimes: Array(LEVELS + 1).fill(0), rockets: Array(LEVELS + 1).fill(null), spares: [] });
 
 export const save = (() => {
   let data = defaults();
@@ -23,5 +23,13 @@ export function recordLevel(level, stars, seconds, cfg) {
   save.stars[level] = Math.max(save.stars[level] || 0, stars);
   if (!save.bestTimes[level] || seconds < save.bestTimes[level]) save.bestTimes[level] = seconds;
   save.unlocked = Math.max(save.unlocked, Math.min(LEVELS, level + 1));
+  persist();
+}
+
+// Spare parts found on planets; they show up in the workshop from then on.
+export function hasSpare(level) { return save.spares.some((sp) => sp.level === level); }
+export function addSpare(spare) {
+  if (hasSpare(spare.level)) return;
+  save.spares.push(spare);
   persist();
 }

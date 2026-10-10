@@ -5,6 +5,7 @@ import { drawRocket, drawPad, drawPartAt, slotCenter, SLOT_BOX, DRAW_ORDER, VARI
 import { INK, rr, fs, drawHand, drawArrow, circle } from '../draw.js';
 import { Button, layoutTopRight } from '../ui.js';
 import { playMusic, toggleMute, sfx } from '../audio.js';
+import { save } from '../storage.js';
 import { Particles } from '../particles.js';
 import { FlightScene } from './flight.js';
 import { MapScene } from './map.js';
@@ -51,6 +52,13 @@ export class BuildScene {
     }
     // Shuffle so the options for one slot end up in different places.
     for (let i = list.length - 1; i > 0; i--) { const j = R.int(0, i); [list[i], list[j]] = [list[j], list[i]]; }
+    // Spare parts found on planets: the newest one plus one random older one, on the gold shelf.
+    const found = save.spares.slice();
+    const spares = [];
+    if (found.length) spares.push(found.pop());
+    if (found.length) spares.push(found[R.int(0, found.length - 1)]);
+    for (const sp of spares) list.push({ slot: sp.slot, part: { ...sp.part }, spare: true });
+    this.spareCount = spares.length;
     this.parts = list.map((p) => ({ ...p, x: 0, y: 0, s: GROUND_SCALE, rot: 0, homeX: 0, homeY: 0, homeRot: 0, state: 'ground' }));
   }
 
@@ -70,6 +78,14 @@ export class BuildScene {
       const sx0 = lerpX(0.18), sx1 = lerpX(0.82);
       this.shelves.push({ x0: Math.min(sx0, sx1) - 30, x1: Math.max(sx0, sx1) + 30, y: shelfY });
       for (const f of [0.3, 0.7]) spots.push({ x: lerpX(f), surface: shelfY });
+    }
+    // Gold shelf above the rocket for spare parts.
+    this.goldShelf = null;
+    if (this.spareCount) {
+      const y = 150 + V.safeT;
+      const n = this.spareCount;
+      this.goldShelf = { x0: this.rx - n * 70 - 10, x1: this.rx + n * 70 + 10, y };
+      for (let i = 0; i < n; i++) spots.push({ x: this.rx + (i - (n - 1) / 2) * 140, surface: y });
     }
     return spots;
   }
@@ -208,7 +224,7 @@ export class BuildScene {
     this.launching = true;
     sfx('pop');
     const cfg = {};
-    for (const s of DRAW_ORDER) cfg[s] = { variant: this.placed[s].part.variant, color: this.placed[s].part.color };
+    for (const s of DRAW_ORDER) cfg[s] = { ...this.placed[s].part };
     this.game.scene = new FlightScene(this.game, { from: this.from, to: this.level, cfg, world: this.world });
     this.game.scene.enter();
   }
@@ -243,6 +259,14 @@ export class BuildScene {
     const wig = this.wiggle > 0 ? Math.sin(this.wiggle * 40) * 0.02 : (this.ready ? Math.sin(t * 8) * 0.01 : 0);
     drawRocket(ctx, this.rx, this.ry, this.cfg(), { ghost: true, glow: dragSlot, t, rot: wig });
     // parts on the ground, then anything moving, then the dragged part on top
+    if (this.goldShelf) {
+      const g = this.goldShelf;
+      const glow = ctx.createRadialGradient(this.rx, g.y - 40, 10, this.rx, g.y - 40, 170);
+      glow.addColorStop(0, 'rgba(255,230,120,0.45)'); glow.addColorStop(1, 'rgba(255,230,120,0)');
+      ctx.fillStyle = glow; ctx.fillRect(this.rx - 180, g.y - 200, 360, 260);
+      rr(ctx, g.x0, g.y, g.x1 - g.x0, 22, 8); fs(ctx, '#ffcc1a', 4);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(g.x0 + 10, g.y + 4, g.x1 - g.x0 - 20, 4);
+    }
     for (const p of this.parts) if (p.state === 'ground') drawPartAt(ctx, p.slot, p.part, p.x, p.y + Math.sin(t * 2 + p.homeX) * 2, p.s, p.rot);
     for (const p of this.parts) if (p.state === 'fly') drawPartAt(ctx, p.slot, p.part, p.x, p.y, p.s, p.rot);
     if (this.drag) {

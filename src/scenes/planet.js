@@ -1,12 +1,12 @@
 // Treasure hunt on a planet. Tap to walk, collect treasures, bring them back to the rocket.
 import { V, R, rng, clamp, dist, ease, Tweens, TAU } from '../core.js';
 import { World } from '../world.js';
-import { drawRocket, HATCH } from '../rocket.js';
+import { drawRocket, drawPartAt, spareFor, SLOT_BOX, HATCH } from '../rocket.js';
 import { drawAstronaut, drawBeetle, drawFly, drawTreasure, drawHider, drawArrow, drawHand, TREASURES, circle, fs, INK, rr } from '../draw.js';
 import { Button, layoutTopRight, drawStarIcon } from '../ui.js';
 import { sfx, playMusic, toggleMute } from '../audio.js';
 import { Particles } from '../particles.js';
-import { recordLevel, LEVELS } from '../storage.js';
+import { recordLevel, LEVELS, hasSpare, addSpare } from '../storage.js';
 import { CREW_COLORS } from './flight.js';
 import { BuildScene } from './build.js';
 import { MapScene } from './map.js';
@@ -107,6 +107,24 @@ export class PlanetScene {
       this.bugs.push({ kind: 'fly', x, ax: x, y: 0, dir: 1, ph: r() * TAU, gone: 0, color: r.pick(['#7bd36b', '#c78bff', '#ffb347']), hitCool: 0 });
     }
     this.bugs.forEach((b) => this.placeBugY(b));
+    // One spare part per planet, until it has been found.
+    this.spare = null;
+    if (!hasSpare(this.level)) {
+      const sp = spareFor(this.level);
+      let x = 0;
+      for (let k = 0; k < 30; k++) {
+        x = r.range(Math.max(this.rx + 400, W * 0.5), W - 150);
+        if (this.treasures.every((tr) => Math.abs(tr.x - x) > 160)) break;
+      }
+      const o = { ...sp, isSpare: true, x, y: 0, vx: 0, vy: 0, state: 'ground', bob: r() * TAU };
+      o.y = this.restY(o);
+      if (this.level >= 3 && r() < 0.5) {
+        const type = r.pick(['rock', 'bush']);
+        this.hiders.push({ type, x, y: this.world.groundAt(x) + 4, treasure: o, used: false, shake: 0, rot: 0, bump: 0 });
+        o.state = 'hidden';
+      }
+      this.spare = o;
+    }
     // Bugs that sneak onto the rocket while the astronaut is away.
     this.squatters = SQUAT_SPOTS.slice(0, spec.squatters).map((sp, i) => ({
       ...sp, state: 'wait', ox: 0, oy: 0, k: 0, delay: i * 0.35, ph: r() * TAU,
@@ -115,6 +133,29 @@ export class PlanetScene {
     // Par time for 3 stars: walk to the farthest treasure and back, plus some time per task.
     const far = Math.max(...this.treasures.map((tr) => Math.abs(tr.x - this.rx)));
     this.par = (far * 2.4) / SPEED + n * 2.5 + spec.hidden * 2.5 + (spec.beetles + spec.flies) * 3 + spec.squatters * 1.5 + 3;
+  }
+
+  // Height above the ground where an item rests.
+  restY(o) {
+    const off = o.isSpare ? (SLOT_BOX[o.slot].h / 2) * 0.42 + 6 : 26;
+    return this.world.groundAt(o.x) - off;
+  }
+
+  // Shared "popped out / knocked off" physics for treasures and spare parts.
+  stepPop(o, dt) {
+    const w = this.world;
+    o.age += dt;
+    o.vy += 1500 * dt;
+    o.x += o.vx * dt; o.y += o.vy * dt;
+    // Bounce off the world edges so nothing lands where the astronaut can't walk.
+    const lo = 100, hi = w.width - 100;
+    if (o.x < lo) { o.x = lo; o.vx = Math.abs(o.vx); }
+    if (o.x > hi) { o.x = hi; o.vx = -Math.abs(o.vx); }
+    const gy = this.restY(o);
+    if (o.vy > 0 && o.y >= gy) {
+      o.y = gy;
+      if (o.vy > 300) { o.vy = -o.vy * 0.35; o.vx *= 0.5; } else { o.state = 'ground'; o.vy = 0; }
+    }
   }
 
   placeBugY(b) {
@@ -302,6 +343,7 @@ export class PlanetScene {
     if (this.state === 'play' || this.state === 'clear') { this.timer += dt; this.idle += dt; }
     this.updateHero(dt);
     this.updateTreasures(dt);
+    this.updateSpare(dt);
     this.updateBugs(dt);
     this.updateSquatters(dt);
     for (const c of this.crew) c.cheer = Math.max(0, c.cheer - dt);
@@ -360,18 +402,7 @@ export class PlanetScene {
     });
     for (const tr of this.treasures) {
       if (tr.state === 'pop') {
-        tr.age += dt;
-        tr.vy += 1500 * dt;
-        tr.x += tr.vx * dt; tr.y += tr.vy * dt;
-        // Bounce off the world edges so a treasure never lands where the astronaut can't walk.
-        const lo = 100, hi = w.width - 100;
-        if (tr.x < lo) { tr.x = lo; tr.vx = Math.abs(tr.vx); }
-        if (tr.x > hi) { tr.x = hi; tr.vx = -Math.abs(tr.vx); }
-        const gy = w.groundAt(tr.x) - 26;
-        if (tr.vy > 0 && tr.y >= gy) {
-          tr.y = gy;
-          if (tr.vy > 300) { tr.vy = -tr.vy * 0.35; tr.vx *= 0.5; } else { tr.state = 'ground'; tr.vy = 0; }
-        }
+        this.stepPop(tr, dt);
       } else if (tr.state === 'ground') {
         tr.x = clamp(tr.x, 100, w.width - 100);
         tr.y =w.groundAt(tr.x) - 26 + Math.sin(this.t * 3 + tr.bob) * 5;
@@ -384,6 +415,29 @@ export class PlanetScene {
         }
       }
     }
+  }
+
+  updateSpare(dt) {
+    const o = this.spare, h = this.hero;
+    if (!o) return;
+    if (o.state === 'pop') this.stepPop(o, dt);
+    else if (o.state === 'ground') {
+      o.y = this.restY(o) + Math.sin(this.t * 3 + o.bob) * 5;
+      if (this.state === 'play' && h.dizzy <= 0 && Math.abs(h.x - o.x) < 55) {
+        o.state = 'fly';
+        addSpare({ level: o.level, slot: o.slot, part: o.part });
+        sfx('ready');
+        this.fx.confetti(o.x, o.y, 30);
+        this.idle = 0;
+        // Fly up into the backpack slot in the corner.
+        const hud = this.spareHudPos();
+        this.tw.add(o, { x: hud.x + this.camX, y: hud.y }, 0.8, { arc: 120, ease: ease.inOutQuad, onDone: () => { o.state = 'got'; this.hudPulse = 0.5; } });
+      }
+    }
+  }
+
+  spareHudPos() {
+    return { x: V.safeL + 40 + this.treasures.length * 62 + 44, y: V.safeT + 60 };
   }
 
   updateBugs(dt) {
@@ -572,6 +626,13 @@ export class PlanetScene {
     for (const tr of this.treasures) {
       if (tr.state === 'ground' || tr.state === 'pop' || tr.state === 'deliver') drawTreasure(ctx, tr.type, tr.x, tr.y, t, 1, tr.hue);
     }
+    const sp = this.spare;
+    if (sp && (sp.state === 'ground' || sp.state === 'pop' || sp.state === 'fly')) {
+      const gl = ctx.createRadialGradient(sp.x, sp.y, 5, sp.x, sp.y, 75);
+      gl.addColorStop(0, 'rgba(255,240,150,0.7)'); gl.addColorStop(1, 'rgba(255,240,150,0)');
+      ctx.fillStyle = gl; circle(ctx, sp.x, sp.y, 75); ctx.fill();
+      drawPartAt(ctx, sp.slot, sp.part, sp.x, sp.y, sp.state === 'fly' ? 0.3 : 0.42, Math.sin(t * 2 + sp.bob) * 0.1);
+    }
     for (const b of this.bugs) {
       if (b.gone > 0) {
         ctx.save(); ctx.translate(b.fallX, b.fallY); ctx.rotate(b.spin); ctx.scale(1, -1);
@@ -647,6 +708,22 @@ export class PlanetScene {
         drawTreasure(ctx, tr.type, x, y, this.t, 0.7 * pop, tr.hue);
       }
     }
+    // Spare part slot: dashed gold ring until found.
+    if (this.spare) {
+      const p = this.spareHudPos();
+      ctx.save();
+      circle(ctx, p.x, p.y, 30);
+      if (this.spare.state === 'got') {
+        fs(ctx, '#ffe9a0', 4);
+        const b = SLOT_BOX[this.spare.slot];
+        drawPartAt(ctx, this.spare.slot, this.spare.part, p.x, p.y, 46 / Math.max(b.w, b.h));
+      } else {
+        ctx.fillStyle = 'rgba(20,14,40,0.35)'; ctx.fill();
+        ctx.setLineDash([7, 6]); ctx.lineDashOffset = -this.t * 12;
+        ctx.lineWidth = 4; ctx.strokeStyle = '#ffd84d'; ctx.stroke();
+      }
+      ctx.restore();
+    }
     this.hudPulse = Math.max(0, (this.hudPulse || 0) - 0.016);
   }
 
@@ -664,6 +741,16 @@ export class PlanetScene {
     const n = this.delivered.length;
     this.delivered.forEach((tr, i) => drawTreasure(ctx, tr.type, (i - (n - 1) / 2) * 62, -185, this.t, 0.75, tr.hue));
     ctx.restore();
+    if (this.spare && this.spare.state === 'got' && r.t > 2) {
+      // "New part!" with spinning rays
+      const k = ease.outBack(Math.min(1, (r.t - 2) * 2));
+      ctx.save(); ctx.translate(cx, 432); ctx.scale(k, k);
+      ctx.rotate(this.t * 0.8);
+      for (let i = 0; i < 10; i++) { ctx.rotate(TAU / 10); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-10, -52); ctx.lineTo(10, -52); ctx.fillStyle = 'rgba(255,210,60,0.35)'; ctx.fill(); }
+      ctx.restore();
+      const b = SLOT_BOX[this.spare.slot];
+      drawPartAt(ctx, this.spare.slot, this.spare.part, cx, 432, (72 / Math.max(b.w, b.h)) * k);
+    }
     for (let i = 0; i < 3; i++) {
       const shown = r.shown > i;
       const k = shown ? ease.outElastic(Math.min(1, (r.t - 0.6 - i * 0.5) * 2)) : 0;

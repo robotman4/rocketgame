@@ -195,6 +195,7 @@ function drawFins(ctx, v, c) {
 }
 
 export function drawPart(ctx, slot, part, crew) {
+  if (part.finish) { drawFinished(ctx, slot, part, crew); return; }
   const { variant: v, color: c } = part;
   if (slot === 'body') drawBody(ctx, v, c);
   else if (slot === 'nose') drawNose(ctx, v, c);
@@ -276,4 +277,78 @@ export function drawPad(ctx, x, y) {
   }
   ctx.restore();
   rr(ctx, x - 140, y, 280, 24, 6); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke();
+}
+
+// ---------- special finishes for spare parts (gold, rainbow, galaxy) ----------
+export const FINISHES = ['gold', 'rainbow', 'galaxy'];
+const finishCache = new Map();
+const FIN_PAD = 14, FIN_RES = 3;
+
+// Render the part once in white, then multiply a finish over it and keep the result.
+function finishedImage(slot, part, crew) {
+  const key = `${slot}|${part.variant}|${part.finish}|${crew ? 1 : 0}`;
+  let img = finishCache.get(key);
+  if (img) return img;
+  const b = SLOT_BOX[slot];
+  const w = (b.w + FIN_PAD * 2) * FIN_RES, h = (b.h + FIN_PAD * 2) * FIN_RES;
+  const base = document.createElement('canvas'); base.width = w; base.height = h;
+  const bc = base.getContext('2d');
+  bc.setTransform(FIN_RES, 0, 0, FIN_RES, (FIN_PAD - b.x) * FIN_RES, (FIN_PAD - b.y) * FIN_RES);
+  drawPart(bc, slot, { variant: part.variant, color: '#f2f2f2' }, crew);
+  img = document.createElement('canvas'); img.width = w; img.height = h;
+  const c = img.getContext('2d');
+  c.drawImage(base, 0, 0);
+  c.globalCompositeOperation = 'multiply';
+  let g;
+  if (part.finish === 'gold') {
+    g = c.createLinearGradient(0, 0, w * 0.4, h);
+    ['#fff1a8', '#ffcf33', '#e69b00', '#ffe066', '#ffcf33', '#c98a00'].forEach((col, i, a) => g.addColorStop(i / (a.length - 1), col));
+  } else if (part.finish === 'rainbow') {
+    g = c.createLinearGradient(0, 0, w, h * 0.3);
+    const cols = ['#ff5e5e', '#ffb34d', '#ffe14d', '#5cd65c', '#4fa8ff', '#a678ff'];
+    cols.forEach((col, i) => { g.addColorStop(i / cols.length, col); g.addColorStop((i + 1) / cols.length - 0.001, col); });
+  } else {
+    g = c.createRadialGradient(w * 0.35, h * 0.3, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
+    g.addColorStop(0, '#9b6bff'); g.addColorStop(0.5, '#4b2fa8'); g.addColorStop(1, '#1d1450');
+  }
+  c.fillStyle = g; c.fillRect(0, 0, w, h);
+  // Keep only the part's own pixels.
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(base, 0, 0);
+  c.globalCompositeOperation = 'source-atop';
+  if (part.finish === 'galaxy') {
+    c.fillStyle = '#ffffff';
+    for (let i = 0; i < 40; i++) {
+      const hx = Math.sin(i * 91.7) * 43758.5453, hy = Math.sin(i * 12.9) * 9631.1;
+      c.globalAlpha = 0.5 + (i % 3) * 0.2;
+      c.beginPath(); c.arc((hx - Math.floor(hx)) * w, (hy - Math.floor(hy)) * h, (1 + (i % 3)) * FIN_RES * 0.8, 0, TAU); c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+  // Shiny diagonal streak.
+  c.globalAlpha = 0.35; c.fillStyle = '#ffffff';
+  c.beginPath(); c.moveTo(w * 0.15, 0); c.lineTo(w * 0.32, 0); c.lineTo(w * 0.02, h); c.lineTo(-w * 0.15, h); c.closePath(); c.fill();
+  c.globalAlpha = 1;
+  finishCache.set(key, img);
+  return img;
+}
+
+function drawFinished(ctx, slot, part, crew) {
+  const b = SLOT_BOX[slot];
+  ctx.drawImage(finishedImage(slot, part, crew), b.x - FIN_PAD, b.y - FIN_PAD, b.w + FIN_PAD * 2, b.h + FIN_PAD * 2);
+  // Twinkles so special parts always look special.
+  const t = performance.now() / 1000;
+  for (let i = 0; i < 2; i++) {
+    const k = (t * 0.8 + i * 0.5) % 1;
+    const sx = b.x + b.w * (0.25 + 0.5 * ((i * 0.618 + Math.floor(t * 0.8 + i * 0.5) * 0.37) % 1));
+    const sy = b.y + b.h * (0.2 + 0.6 * ((i * 0.33 + Math.floor(t * 0.8 + i * 0.5) * 0.51) % 1));
+    starPath(ctx, sx, sy, 10 * Math.sin(k * Math.PI), 2.5, 4, 0);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+  }
+}
+
+// Each planet hides one spare part. Always the same one for a given planet.
+export function spareFor(level) {
+  const slot = DRAW_ORDER[(level * 2 + 1) % DRAW_ORDER.length];
+  return { level, slot, part: { variant: (level * 7) % VARIANTS[slot], color: '#f2f2f2', finish: FINISHES[level % FINISHES.length] } };
 }
