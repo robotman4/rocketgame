@@ -2,11 +2,12 @@
 import { V, clamp, TAU, shade } from '../core.js';
 import { themeFor, drawStars } from '../world.js';
 import { INK, circle, ellipse, fs, rr, drawArrow } from '../draw.js';
-import { Button, layoutTopRight, drawStarIcon } from '../ui.js';
+import { Button, layoutTopRight, updateButton, layoutTopLeft, drawStarIcon } from '../ui.js';
 import { drawRocket, randomPart, DRAW_ORDER } from '../rocket.js';
 import { playMusic, toggleMute, sfx } from '../audio.js';
 import { save, LEVELS } from '../storage.js';
 import { Particles } from '../particles.js';
+import { pwa } from '../pwa.js';
 import { BuildScene } from './build.js';
 import { TitleScene } from './title.js';
 
@@ -18,6 +19,7 @@ export class MapScene {
     this.t = 0;
     this.home = new Button('home', '#f5962a', 36);
     this.sound = new Button('sound', '#3b8fe8', 36);
+    this.updBtn = updateButton();
     this.fx = new Particles();
     this.cfg = {};
     for (const s of DRAW_ORDER) this.cfg[s] = randomPart(s);
@@ -28,6 +30,7 @@ export class MapScene {
     this.scroll = clamp(cur.x - V.w / 2, 0, this.maxScroll());
   }
   onResize() {
+    layoutTopLeft(this.updBtn);
     layoutTopRight([this.sound, this.home]);
   }
   enter() { playMusic('map'); }
@@ -37,6 +40,8 @@ export class MapScene {
   maxScroll() { return Math.max(0, this.pos(LEVELS).x + 180 - V.w); }
 
   onDown(p) {
+    this.updBtn.visible = pwa.ready;
+    if (this.updBtn.hit(p)) { sfx('pop'); pwa.apply(); return; }
     if (this.sound.hit(p)) { toggleMute(); sfx('tap'); return; }
     if (this.home.hit(p)) { sfx('tap'); this.game.go(new TitleScene(this.game)); return; }
     this.drag = { x0: p.x, last: p.x, s0: this.scroll, moved: 0, t: performance.now() };
@@ -138,6 +143,8 @@ export class MapScene {
 
     this.fx.draw(ctx);
     this.home.draw(ctx, t);
+    this.updBtn.visible = pwa.ready;
+    this.updBtn.draw(ctx, t);
     this.sound.draw(ctx, t);
   }
 }

@@ -2,6 +2,7 @@
 import { V } from './core.js';
 import { unlockAudio } from './audio.js';
 import { TitleScene } from './scenes/title.js';
+import './pwa.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');

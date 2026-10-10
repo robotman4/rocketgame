@@ -2,9 +2,10 @@ import { V, R } from '../core.js';
 import { World } from '../world.js';
 import { drawRocket, randomPart, DRAW_ORDER } from '../rocket.js';
 import { drawAstronaut, INK } from '../draw.js';
-import { Button, layoutTopRight } from '../ui.js';
+import { Button, layoutTopRight, updateButton, layoutTopLeft } from '../ui.js';
 import { playMusic, toggleMute, sfx } from '../audio.js';
 import { Particles } from '../particles.js';
+import { pwa } from '../pwa.js';
 import { MapScene } from './map.js';
 
 export class TitleScene {
@@ -17,16 +18,20 @@ export class TitleScene {
     this.play = new Button('play', '#5cc95a', 70);
     this.play.pulse = true;
     this.sound = new Button('sound', '#3b8fe8', 36);
+    this.updBtn = updateButton();
     this.fx = new Particles();
     this.onResize();
   }
   onResize() {
     this.world = new World(0);
     this.play.x = V.w / 2 + 230; this.play.y = 470;
+    layoutTopLeft(this.updBtn);
     layoutTopRight([this.sound]);
   }
   enter() { playMusic('map'); }
   onDown(p) {
+    this.updBtn.visible = pwa.ready;
+    if (this.updBtn.hit(p)) { sfx('pop'); pwa.apply(); return; }
     if (this.sound.hit(p)) { toggleMute(); sfx('tap'); return; }
     if (this.play.hit(p)) {
       sfx('pop');
@@ -64,6 +69,8 @@ export class TitleScene {
     }
     ctx.restore();
     this.play.draw(ctx, t);
+    this.updBtn.visible = pwa.ready;
+    this.updBtn.draw(ctx, t);
     this.sound.draw(ctx, t);
     this.fx.draw(ctx);
   }

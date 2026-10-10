@@ -65,6 +65,12 @@ export function drawIcon(ctx, icon, r, t = 0) {
     ctx.beginPath(); ctx.arc(0, 0, 16, -Math.PI * 0.2, Math.PI * 1.5); ctx.lineWidth = 12; ctx.strokeStyle = INK; ctx.stroke();
     ctx.lineWidth = 6; ctx.strokeStyle = '#ffffff'; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(2, -26); ctx.lineTo(14, -16); ctx.lineTo(0, -8); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.fill(); ctx.stroke();
+  } else if (icon === 'update') {
+    // Arrow down into a tray: "get the new version".
+    ctx.beginPath(); ctx.moveTo(-8, -22); ctx.lineTo(8, -22); ctx.lineTo(8, -4); ctx.lineTo(18, -4); ctx.lineTo(0, 14); ctx.lineTo(-18, -4); ctx.lineTo(-8, -4); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-22, 8); ctx.lineTo(-22, 20); ctx.lineTo(22, 20); ctx.lineTo(22, 8);
+    ctx.lineWidth = 10; ctx.stroke(); ctx.lineWidth = 5; ctx.strokeStyle = '#ffffff'; ctx.stroke();
   } else if (icon === 'star') {
     starPath(ctx, 0, 0, 24, 11); ctx.fillStyle = '#ffe14d'; ctx.fill(); ctx.stroke();
   }
@@ -84,4 +90,15 @@ export function drawStarIcon(ctx, x, y, r, filled, t = 0) {
   if (filled) {
     ctx.beginPath(); ctx.arc(x - r * 0.15, y - r * 0.1, r * 0.25, Math.PI, Math.PI * 1.5); ctx.lineWidth = r * 0.1; ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.stroke();
   }
+}
+
+// Update button, top-left. Only visible when a new version has been downloaded.
+export function updateButton() {
+  const b = new Button('update', '#5cc95a', 36);
+  b.pulse = true;
+  return b;
+}
+export function layoutTopLeft(b) {
+  b.x = V.safeL + 20 + b.r;
+  b.y = 20 + b.r + V.safeT;
 }
