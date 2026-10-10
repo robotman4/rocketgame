@@ -1,9 +1,16 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
+
+// Shown in the info panel: build date plus short commit id.
+let sha = (process.env.GITHUB_SHA || '').slice(0, 7);
+try { if (!sha) sha = execSync('git rev-parse --short HEAD').toString().trim(); } catch (e) { sha = 'dev'; }
+const VERSION = `${new Date().toISOString().slice(0, 10)} (${sha})`;
 
 // GitHub Pages serves the site from /<repo>/.
 export default defineConfig({
   base: '/rocketgame/',
+  define: { __APP_VERSION__: JSON.stringify(VERSION) },
   plugins: [
     VitePWA({
       registerType: 'prompt',

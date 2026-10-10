@@ -62,4 +62,5 @@ Stars are based on time against a target time worked out from the level layout.
 
 - Every planet hides one spare part with a gold, rainbow or galaxy finish. Picking it up is optional. Found parts are saved and show up on a gold shelf in later workshops.
 - The star map shows the rocket you flew to each planet, parked on that planet.
+- An (i) button on the title and map screens opens an info panel for parents: what the game is, that no data is collected, a disclaimer, the version and a "Check for updates" button. The app also checks for updates by itself every 2 hours and when it comes back from the background.
 - When a new version has been deployed, a green download button appears on the title and map screens. Tapping it loads the new version, and progress is kept.

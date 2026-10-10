@@ -8,6 +8,7 @@ import { playMusic, toggleMute, sfx } from '../audio.js';
 import { save, LEVELS, DANGER_FROM } from '../storage.js';
 import { Particles } from '../particles.js';
 import { pwa } from '../pwa.js';
+import { InfoPanel } from '../info.js';
 import { BuildScene } from './build.js';
 import { TitleScene } from './title.js';
 
@@ -19,6 +20,8 @@ export class MapScene {
     this.t = 0;
     this.home = new Button('home', '#f5962a', 36);
     this.sound = new Button('sound', '#3b8fe8', 36);
+    this.infoBtn = new Button('info', '#9b5de5', 36);
+    this.info = new InfoPanel();
     this.updBtn = updateButton();
     this.fx = new Particles();
     this.cfg = {};
@@ -31,7 +34,7 @@ export class MapScene {
   }
   onResize() {
     layoutTopLeft(this.updBtn);
-    layoutTopRight([this.sound, this.home]);
+    layoutTopRight([this.sound, this.home, this.infoBtn]);
   }
   enter() { playMusic('map'); }
   pos(i) {
@@ -40,8 +43,10 @@ export class MapScene {
   maxScroll() { return Math.max(0, this.pos(LEVELS).x + 180 - V.w); }
 
   onDown(p) {
+    if (this.info.onDown(p, this.fx)) return;
     this.updBtn.visible = pwa.ready;
     if (this.updBtn.hit(p)) { tapUpdate(this.updBtn, this.fx); return; }
+    if (this.infoBtn.hit(p)) { this.info.show(); return; }
     if (this.sound.hit(p)) { toggleMute(); sfx('tap'); return; }
     if (this.home.hit(p)) { sfx('tap'); this.game.go(new TitleScene(this.game)); return; }
     this.drag = { x0: p.x, last: p.x, s0: this.scroll, moved: 0, t: performance.now() };
@@ -80,6 +85,7 @@ export class MapScene {
   update(dt) {
     this.t += dt;
     this.fx.update(dt);
+    this.info.update(dt);
     if (!this.drag) {
       this.scroll += this.vel * dt;
       this.vel *= Math.exp(-4 * dt);
@@ -169,6 +175,8 @@ export class MapScene {
     this.updBtn.visible = pwa.ready || this.updBtn.spinning;
     this.updBtn.draw(ctx, t);
     this.sound.draw(ctx, t);
+    this.infoBtn.draw(ctx, t);
+    this.info.draw(ctx, t);
   }
 }
 

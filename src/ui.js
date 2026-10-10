@@ -74,6 +74,13 @@ export function drawIcon(ctx, icon, r, t = 0) {
     ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(-22, 8); ctx.lineTo(-22, 20); ctx.lineTo(22, 20); ctx.lineTo(22, 8);
     ctx.lineWidth = 10; ctx.stroke(); ctx.lineWidth = 5; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+  } else if (icon === 'info') {
+    circle(ctx, 0, -15, 6); ctx.fill(); ctx.stroke();
+    rr(ctx, -6, -4, 12, 26, 4); ctx.fill(); ctx.stroke();
+  } else if (icon === 'close') {
+    ctx.beginPath(); ctx.moveTo(-14, -14); ctx.lineTo(14, 14); ctx.moveTo(14, -14); ctx.lineTo(-14, 14);
+    ctx.lineWidth = 14; ctx.strokeStyle = INK; ctx.stroke();
+    ctx.lineWidth = 7; ctx.strokeStyle = '#ffffff'; ctx.stroke();
   } else if (icon === 'star') {
     starPath(ctx, 0, 0, 24, 11); ctx.fillStyle = '#ffe14d'; ctx.fill(); ctx.stroke();
   }

@@ -6,6 +6,7 @@ import { Button, layoutTopRight, updateButton, layoutTopLeft, tapUpdate } from '
 import { playMusic, toggleMute, sfx } from '../audio.js';
 import { Particles } from '../particles.js';
 import { pwa } from '../pwa.js';
+import { InfoPanel } from '../info.js';
 import { MapScene } from './map.js';
 import { Gift } from '../celebrate.js';
 
@@ -19,6 +20,8 @@ export class TitleScene {
     this.play = new Button('play', '#5cc95a', 70);
     this.play.pulse = true;
     this.sound = new Button('sound', '#3b8fe8', 36);
+    this.infoBtn = new Button('info', '#9b5de5', 36);
+    this.info = new InfoPanel();
     this.updBtn = updateButton();
     this.fx = new Particles();
     // Just updated: show a present to open.
@@ -30,13 +33,15 @@ export class TitleScene {
     this.world = new World(0);
     this.play.x = V.w / 2 + 230; this.play.y = 470;
     layoutTopLeft(this.updBtn);
-    layoutTopRight([this.sound]);
+    layoutTopRight([this.sound, this.infoBtn]);
   }
   enter() { playMusic('map'); }
   onDown(p) {
+    if (this.info.onDown(p, this.fx)) return;
     if (this.gift && !this.gift.done) { this.gift.onDown(p); return; }
     this.updBtn.visible = pwa.ready;
     if (this.updBtn.hit(p)) { tapUpdate(this.updBtn, this.fx); return; }
+    if (this.infoBtn.hit(p)) { this.info.show(); return; }
     if (this.sound.hit(p)) { toggleMute(); sfx('tap'); return; }
     if (this.play.hit(p)) {
       sfx('pop');
@@ -46,7 +51,7 @@ export class TitleScene {
     this.fx.burst(p.x, p.y, 8);
     sfx('tap');
   }
-  update(dt) { this.t += dt; this.fx.update(dt); if (this.gift) this.gift.update(dt); }
+  update(dt) { this.t += dt; this.fx.update(dt); this.info.update(dt); if (this.gift) this.gift.update(dt); }
   draw(ctx) {
     const t = this.t, w = this.world;
     w.drawBackground(ctx, 0, 0, t);
@@ -77,6 +82,8 @@ export class TitleScene {
     this.updBtn.visible = pwa.ready || this.updBtn.spinning;
     this.updBtn.draw(ctx, t);
     this.sound.draw(ctx, t);
+    this.infoBtn.draw(ctx, t);
+    this.info.draw(ctx, t);
     this.fx.draw(ctx);
     if (this.gift) this.gift.draw(ctx, this.t);
   }
