@@ -278,13 +278,18 @@ export class PlanetScene {
         tr.age += dt;
         tr.vy += 1500 * dt;
         tr.x += tr.vx * dt; tr.y += tr.vy * dt;
+        // Bounce off the world edges so a treasure never lands where the astronaut can't walk.
+        const lo = 100, hi = w.width - 100;
+        if (tr.x < lo) { tr.x = lo; tr.vx = Math.abs(tr.vx); }
+        if (tr.x > hi) { tr.x = hi; tr.vx = -Math.abs(tr.vx); }
         const gy = w.groundAt(tr.x) - 26;
         if (tr.vy > 0 && tr.y >= gy) {
           tr.y = gy;
           if (tr.vy > 300) { tr.vy = -tr.vy * 0.35; tr.vx *= 0.5; } else { tr.state = 'ground'; tr.vy = 0; }
         }
       } else if (tr.state === 'ground') {
-        tr.y = w.groundAt(tr.x) - 26 + Math.sin(this.t * 3 + tr.bob) * 5;
+        tr.x = clamp(tr.x, 100, w.width - 100);
+        tr.y =w.groundAt(tr.x) - 26 + Math.sin(this.t * 3 + tr.bob) * 5;
         if (this.state === 'play' && h.dizzy <= 0 && Math.abs(h.x - tr.x) < 50 && h.state !== 'intro') {
           tr.state = 'carried';
           h.carry.push(tr);
