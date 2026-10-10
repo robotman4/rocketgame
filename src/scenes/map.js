@@ -125,6 +125,12 @@ export class MapScene {
       const current = i === save.unlocked && !save.stars[i];
       const bob = Math.sin(t * 1.5 + i) * 5;
       drawPlanet(ctx, i, x, q.y + bob, q.r, t, locked);
+      // The rocket the player flew here with, parked on the planet.
+      const mini = save.rockets[i];
+      if (mini && !locked) {
+        const a = -Math.PI / 3;
+        drawRocket(ctx, x + Math.cos(a) * q.r, q.y + bob + Math.sin(a) * q.r + 3, mini, { scale: 0.21, rot: a + Math.PI / 2 });
+      }
       if (current) {
         ctx.globalAlpha = 0.4 + Math.sin(t * 5) * 0.25;
         circle(ctx, x, q.y + bob, q.r + 16 + Math.sin(t * 5) * 4);
@@ -136,10 +142,11 @@ export class MapScene {
         for (let k = 0; k < 3; k++) drawStarIcon(ctx, x - 34 + k * 34, q.y + bob + q.r + 30, 15, save.stars[i] > k);
       }
     }
-    // Rocket parked at the last planet reached.
-    const at = this.pos(Math.max(0, save.unlocked - 1));
-    const rxp = at.x - this.scroll + at.r * 0.7, ryp = at.y - at.r * 0.6 + Math.sin(t * 2) * 4;
-    drawRocket(ctx, rxp, ryp, this.cfg, { scale: 0.22, rot: 0.3 });
+    // Before any planet is done, show a rocket waiting at Earth.
+    if (!save.rockets.some(Boolean)) {
+      const at = this.pos(0);
+      drawRocket(ctx, at.x - this.scroll + at.r * 0.7, at.y - at.r * 0.6 + Math.sin(t * 2) * 4, this.cfg, { scale: 0.22, rot: 0.3 });
+    }
 
     this.fx.draw(ctx);
     this.home.draw(ctx, t);

@@ -474,7 +474,7 @@ export class PlanetScene {
     this.state = 'boarding';
     this.time = this.timer;
     this.stars = this.time <= this.par * 1.2 ? 3 : this.time <= this.par * 2 ? 2 : 1;
-    recordLevel(this.level, this.stars, Math.round(this.time));
+    recordLevel(this.level, this.stars, Math.round(this.time), this.cfg);
     sfx('fanfare');
     this.fx.confetti(this.rx, this.ry - 300, 70);
     const h = this.hero;
