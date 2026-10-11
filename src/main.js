@@ -8,13 +8,21 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const safeEl = document.getElementById('safe');
 
+// Measure the canvas as CSS actually laid it out (full screen). iOS sometimes reports a stale
+// or too small window.innerHeight (after rotating, coming back to the app, around the home
+// indicator), which used to leave a strip of page background at the bottom.
+let lastW = 0, lastH = 0;
+function screenSize() {
+  const r = canvas.getBoundingClientRect();
+  return [Math.round(r.width) || window.innerWidth, Math.round(r.height) || window.innerHeight];
+}
+
 function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
+  const [w, h] = screenSize();
+  lastW = w; lastH = h;
   V.dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.round(w * V.dpr);
   canvas.height = Math.round(h * V.dpr);
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
   V.h = 768;
   V.w = Math.max(768, (768 * w) / h);
   V.scale = canvas.height / V.h;
@@ -43,7 +51,14 @@ export const game = {
 };
 
 window.addEventListener('resize', resize);
-window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+// iOS settles the final size a little after rotating or returning, so check again a few times.
+const resizeSoon = () => [50, 250, 600].forEach((ms) => setTimeout(resize, ms));
+window.addEventListener('orientationchange', resizeSoon);
+window.addEventListener('pageshow', resizeSoon);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resizeSoon(); });
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+// Safety net: if the canvas box and its pixel size ever disagree, fix it.
+setInterval(() => { const [w, h] = screenSize(); if (w !== lastW || h !== lastH) resize(); }, 1000);
 
 // ---------- input: one finger at a time ----------
 let activeId = null;

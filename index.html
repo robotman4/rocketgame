@@ -22,7 +22,8 @@
         -webkit-tap-highlight-color: transparent;
         overscroll-behavior: none;
       }
-      canvas { display: block; touch-action: none; }
+      /* The canvas always covers the whole screen; its pixel size is measured from this box. */
+      canvas { display: block; touch-action: none; position: fixed; inset: 0; width: 100%; height: 100%; }
       #safe {
         position: fixed; visibility: hidden; pointer-events: none;
         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
